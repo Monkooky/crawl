@@ -861,7 +861,7 @@ void get_cleave_targets(const actor &attacker, const coord_def& def,
             actor *target = actor_at(*di);
             if (!target || _dont_harm(attacker, *target))
                 continue;
-            if (di.radius() == 2 && !can_reach_attack_between(atk, *di, REACH_TWO))
+            if (di.radius() == 2 && !can_reach_attack_between(atk, *di, 2))
                 continue;
             targets.push_back(target);
         }
