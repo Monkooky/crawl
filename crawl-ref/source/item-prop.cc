@@ -2078,16 +2078,16 @@ int ammo_type_damage(int missile_type)
 //
 // Reaching functions:
 //
-reach_type weapon_reach(const item_def &item)
+int weapon_reach(const item_def &item)
 {
     if (is_unrandom_artefact(item, UNRAND_RIFT))
-        return REACH_THREE;
+        return 3;
     if (item_attack_skill(item) == SK_POLEARMS
         || is_unrandom_artefact(item, UNRAND_LOCHABER_AXE))
     {
-        return REACH_TWO;
+        return 2;
     }
-    return REACH_NONE;
+    return 1;
 }
 
 //

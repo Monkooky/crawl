@@ -85,7 +85,7 @@ melee_attack::melee_attack(actor *attk, actor *defn,
 
 bool melee_attack::can_reach()
 {
-    return attk_type == AT_HIT && weapon && weapon_reach(*weapon) > REACH_NONE
+    return attk_type == AT_HIT && weapon && weapon_reach(*weapon) > 1
            || flavour_has_reach(attk_flavour)
            || is_projected;
 }

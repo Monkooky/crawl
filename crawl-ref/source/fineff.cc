@@ -813,8 +813,8 @@ void spectral_weapon_fineff::fire()
     if (sw)
     {
         // Is it already in range?
-        const reach_type sw_range = sw->reach_range();
-        if (sw_range > REACH_NONE
+        const int sw_range = sw->reach_range();
+        if (sw_range > 1
             && can_reach_attack_between(sw->pos(), target, sw_range)
             || adjacent(sw->pos(), target))
         {
@@ -826,7 +826,7 @@ void spectral_weapon_fineff::fire()
     }
 
     // Can we find a nearby space to attack from?
-    const reach_type atk_range = atkr->reach_range();
+    const int atk_range = atkr->reach_range();
     int seen_valid = 0;
     coord_def chosen_pos;
     // Try only spaces adjacent to the attacker.
@@ -839,7 +839,7 @@ void spectral_weapon_fineff::fire()
         }
         // ... and only spaces the weapon could attack the defender from.
         if (grid_distance(*ai, target) > 1
-            && (atk_range <= REACH_NONE
+            && (atk_range <= 1
                 || !can_reach_attack_between(*ai, target, atk_range)))
         {
             continue;

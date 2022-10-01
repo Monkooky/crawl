@@ -6587,12 +6587,12 @@ bool player::nightvision() const
            || player_equip_unrand(UNRAND_SHADOWS);
 }
 
-reach_type player::reach_range() const
+int player::reach_range() const
 {
     const item_def *wpn = weapon();
     if (wpn)
         return weapon_reach(*wpn);
-    return REACH_NONE;
+    return 1;
 }
 
 monster_type player::mons_species(bool /*zombie_base*/) const

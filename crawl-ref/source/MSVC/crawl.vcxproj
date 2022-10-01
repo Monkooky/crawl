@@ -1113,7 +1113,6 @@ perl.exe "util/gen-cflg.pl" compflag.h "&lt;UNKNOWN&gt;" "&lt;UNKNOWN&gt;"
     <ClInclude Include="..\random.h" />
     <ClInclude Include="..\ranged-attack.h" />
     <ClInclude Include="..\ray.h" />
-    <ClInclude Include="..\reach-type.h" />
     <ClInclude Include="..\recite-eligibility.h" />
     <ClInclude Include="..\recite-type.h" />
     <ClInclude Include="..\religion-enum.h" />

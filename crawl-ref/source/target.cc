@@ -943,7 +943,7 @@ bool targeter_fragment::set_aim(coord_def a)
     return true;
 }
 
-targeter_reach::targeter_reach(const actor* act, reach_type ran) :
+targeter_reach::targeter_reach(const actor* act, int ran) :
     range(ran)
 {
     ASSERT(act);
@@ -974,9 +974,9 @@ aff_type targeter_reach::is_affected(coord_def loc)
     if (loc == aim)
         return AFF_YES;
 
-    // hacks: REACH_THREE entails smite targeting, because it exists entirely
+    // hacks: range 3 entails smite targeting, because it exists entirely
     // for the sake of UNRAND_RIFT. So, don't show the tracer.
-    if (range == REACH_TWO
+    if (range == 2
         && ((loc - origin) * 2 - (aim - origin)).abs() < 1
         && feat_is_reachable_past(env.grid(loc)))
     {

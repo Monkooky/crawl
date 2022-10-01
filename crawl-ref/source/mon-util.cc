@@ -54,7 +54,6 @@
 #include "notes.h"
 #include "options.h"
 #include "random.h"
-#include "reach-type.h"
 #include "religion.h"
 #include "showsymb.h"
 #include "species.h"

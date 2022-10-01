@@ -400,7 +400,7 @@ static bool _allied_monster_at(monster* mon, coord_def a, coord_def b,
         if (ally == nullptr)
             continue;
 
-        if (ally->is_stationary() || ally->reach_range() > REACH_NONE)
+        if (ally->is_stationary() || ally->reach_range() > 1)
             continue;
 
         // Hostile monsters of normal intelligence only move aside for
@@ -977,13 +977,13 @@ static bool _handle_swoop(monster& mons)
 static bool _handle_reaching(monster& mons)
 {
     bool       ret = false;
-    const reach_type range = mons.reach_range();
+    const int range = mons.reach_range();
     actor *foe = mons.get_foe();
 
     if (mons.caught()
         || mons_is_confused(mons)
         || !foe
-        || range <= REACH_NONE
+        || range <= 1
         || is_sanctuary(mons.pos())
         || is_sanctuary(foe->pos())
         || mons.submerged()

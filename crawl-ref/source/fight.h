@@ -88,7 +88,7 @@ bool stop_summoning_prompt(resists_t resists = MR_NO_FLAGS,
                            string verb = "summon");
 
 bool can_reach_attack_between(coord_def source, coord_def target,
-                              reach_type range);
+                              int range);
 dice_def spines_damage(monster_type mon);
 int archer_bonus_damage(int hd);
 

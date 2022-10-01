@@ -9,7 +9,6 @@
 
 #include "equipment-type.h"
 #include "item-prop-enum.h"
-#include "reach-type.h"
 #include "size-type.h"
 #include "tag-version.h"
 
@@ -181,7 +180,7 @@ int  ammo_type_destroy_chance(int missile_type) PURE;
 int  ammo_type_damage(int missile_type) PURE;
 
 
-reach_type weapon_reach(const item_def &item) PURE;
+int weapon_reach(const item_def &item) PURE;
 
 // Macguffins
 bool item_is_unique_rune(const item_def &item) PURE;

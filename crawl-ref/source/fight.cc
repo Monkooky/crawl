@@ -909,7 +909,7 @@ void attack_cleave_targets(actor &attacker, list<actor*> &targets,
             // worshiping Wu they'll be able to cleave their Wu attacks.
         }
     }
-    const bool reaching = weap && weapon_reach(*weap) > REACH_NONE;
+    const bool reaching = weap && weapon_reach(*weap) > 1;
     while (attacker.alive() && !targets.empty())
     {
         actor* def = targets.front();
@@ -1243,7 +1243,7 @@ bool stop_summoning_prompt(resists_t resists, string verb)
 }
 
 bool can_reach_attack_between(coord_def source, coord_def target,
-                              reach_type range)
+                              int range)
 {
     // The foe should be on the map (not stepped from time).
     if (!in_bounds(target))
@@ -1253,7 +1253,7 @@ bool can_reach_attack_between(coord_def source, coord_def target,
     const int grid_distance(delta.rdist());
 
     // Unrand only - Rift is smite-targeted and up to 3 range.
-    if (range == REACH_THREE)
+    if (range == 3)
     {
         return cell_see_cell(source, target, LOS_NO_TRANS)
                && grid_distance > 1 && grid_distance <= range;
