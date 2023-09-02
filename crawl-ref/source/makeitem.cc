@@ -1545,6 +1545,9 @@ static const vector<random_pick_entry<talisman_type>> talisman_weights =
     { 20, 27,  25, RISE, TALISMAN_STORM },
     { 28, 35,  25, FLAT, TALISMAN_STORM },
     {  0, 35,   5, FLAT, TALISMAN_STORM },
+    { 20, 27,  25, RISE, TALISMAN_MAENAD },
+    { 28, 35,  25, FLAT, TALISMAN_MAENAD },
+    {  0, 35,   5, FLAT, TALISMAN_MAENAD },
 };
 
 static void _generate_talisman_item(item_def& item, int force_type, int item_level)

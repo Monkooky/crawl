@@ -999,7 +999,7 @@ static string talisman_type_name(int type)
     switch (type)
     {
     case TALISMAN_BEAST:    return "beast talisman";
-    case TALISMAN_FLUX:    return "flux talisman";
+    case TALISMAN_FLUX:     return "flux talisman";
     case TALISMAN_MAW:      return "maw talisman";
     case TALISMAN_SERPENT:  return "serpent talisman";
     case TALISMAN_BLADE:    return "blade talisman";
@@ -1007,6 +1007,7 @@ static string talisman_type_name(int type)
     case TALISMAN_DRAGON:   return "dragon-blood talisman";
     case TALISMAN_DEATH:    return "talisman of death";
     case TALISMAN_STORM:    return "storm talisman";
+    case TALISMAN_MAENAD:   return "maenad talisman";
     default:
         return "buggy talisman";
     }

@@ -341,7 +341,8 @@ random_var player::attack_delay_with(const item_def *projectile, bool rescale,
             attk_delay = div_rand_round(attk_delay * 3, 2);
     }
 
-    // At the moment it never gets this low anyway.
+    if(you.form == transformation::statue)
+
     attk_delay = rv::max(attk_delay, random_var(3));
 
     attk_delay +=

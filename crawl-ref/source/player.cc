@@ -5395,6 +5395,7 @@ bool player::rampaging() const
     return !you_worship(GOD_WU_JIAN)
         && (player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS)
             || you.has_mutation(MUT_ROLLPAGE)
+            || you.form == transformation::dervish
             || actor::rampaging());
 }
 

@@ -3837,6 +3837,8 @@ colour_t item_def::talisman_colour() const
         return MAGENTA;
     case TALISMAN_STORM:
         return ETC_ELECTRICITY;
+    case TALISMAN_MAENAD:
+        return ETC_DISCO; // damn the consequences!
     default:
         return LIGHTGREEN;
     }

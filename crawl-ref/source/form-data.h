@@ -379,5 +379,20 @@ static const form_entry formdata[] =
       { "contaminating", "Foes you strike become dangerously contaminated with magical radiation." } }
 },
 
+{
+    transformation::maenad, MONS_FAUN, "Maenad", "revelling", "maenad",
+    "a maddened reveler!",
+    23, 27, TALISMAN_MAENAD,
+    SLOTF(EQ_BODY_ARMOUR) | SLOTF(EQ_BOOTS), MR_NO_FLAGS,
+    DEFAULT_DURATION, 0, 0, SIZE_CHARACTER, 10,
+    {}, true, {},
+    SPWPN_NORMAL, MAGENTA, "", DEFAULT_VERBS,
+    FC_DEFAULT, FC_DEFAULT, FC_DEFAULT, true, false,
+    "", 0, "", "", "", "",
+    { { "manic", "Your attacks are fast." },
+      { "", "You are incredibly evasive." },
+      { "insubstantial", "Your insubstantial body is immune to petrification, constriction, and being set on fire"}
+    }
+},
 };
 COMPILE_CHECK(ARRAYSZ(formdata) == NUM_TRANSFORMS);

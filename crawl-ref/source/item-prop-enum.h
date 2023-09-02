@@ -826,5 +826,6 @@ enum talisman_type
     TALISMAN_DEATH,
     TALISMAN_STORM,
     TALISMAN_FLUX,
+    TALISMAN_MAENAD,
     NUM_TALISMANS,
 };

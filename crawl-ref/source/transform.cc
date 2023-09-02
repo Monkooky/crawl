@@ -834,6 +834,32 @@ public:
     bool can_offhand_punch() const override { return true; }
 };
 
+class FormMaenad : public Form
+{
+private:
+    FormMaenad() : Form(transformation::maenad) { }
+    DISALLOW_COPY_AND_ASSIGN(FormMaenad);
+public:
+    static const FormMaenad &instance() { static FormMaenad inst; return inst; }
+    /**
+     * Get a message for transforming into this form.
+     */
+    string transform_message(transformation /*previous_trans*/) const override
+    {
+        return "You feel a manic joy as you quaff.";
+    }
+
+    int get_atk_delay_reduction (int scale) const override
+    {
+            const int scale = 100;
+        const int lvl = max(get_level(scale), min_skill * scale);
+        const int shortfall = max(0, max_skill * scale - lvl);
+        const int div = (max_skill - min_skill) * scale;
+        // Round up.
+        return (shortfall * base + div - 1) / div;
+    }
+}
+
 class FormDeath : public Form
 {
 private:
@@ -1119,6 +1145,7 @@ static const Form* forms[] =
     &FormBeast::instance(),
     &FormMaw::instance(),
     &FormFlux::instance(),
+    &FormMaenad::instance(),
 };
 
 const Form* get_form(transformation xform)

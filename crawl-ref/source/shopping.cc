@@ -654,6 +654,7 @@ unsigned int item_value(item_def item, bool ident)
         {
         case TALISMAN_DEATH:
         case TALISMAN_STORM:
+        case TALISMAN_MAENAD:
             valued += 1200;
             break;
 

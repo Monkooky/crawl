@@ -757,6 +757,16 @@ mace
 
 A short club with a metal head.
 %%%%
+maenad talisman
+
+A bottomless amphora of ambrosial wine laced with magic.
+The imbiber enters an estatic trance, compelled to estatic dance. Whenever the user
+moves, they begin dancing, and while dancing they strike rapidly and rampage 
+towards foes equally fast. Further, while drinking the ambrosial wine
+the user's mind is inured against other mental effects, and they regenerate rapidly.
+
+Neither footwear nor body armour can be worn in this form.
+%%%%
 manual
 
 A valuable book which allows one to learn a certain skill faster.
