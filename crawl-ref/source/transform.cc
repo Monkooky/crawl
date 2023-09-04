@@ -849,16 +849,28 @@ public:
         return "You feel a manic joy as you quaff.";
     }
 
+    int ev_bonus(bool get_max) const override
+    {
+        return max(0, scaling_value(FormScaling().Base(6).Scaling(9),
+                                    false, get_max));
+    }
+
+    //returns scaled attack delay reduction
+    //return ranges from 0 to 2 * scale, corresponding to 0 to 2 auts.
     int get_atk_delay_reduction (int scale) const override
     {
-            const int scale = 100;
-        const int lvl = max(get_level(scale), min_skill * scale);
-        const int shortfall = max(0, max_skill * scale - lvl);
-        const int div = (max_skill - min_skill) * scale;
-        // Round up.
-        return (shortfall * base + div - 1) / div;
+        const int lvl = max(0, get_level(scale) - min_skill * scale);
+        const int div = (max_skill - min_skill);
+        return 2 * lvl / div;
     }
-}
+
+    int quaff_power (bool get_max) const override
+    {
+        int val = max(0, scaling_value(FormScaling().Base(4).Scaling(6),
+                                    false, get_max));
+        return random_range(2, val);
+    }
+};
 
 class FormDeath : public Form
 {

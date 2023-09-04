@@ -382,7 +382,7 @@ static const form_entry formdata[] =
 {
     transformation::maenad, MONS_FAUN, "Maenad", "revelling", "maenad",
     "a maddened reveler!",
-    23, 27, TALISMAN_MAENAD,
+    20, 27, TALISMAN_MAENAD,
     SLOTF(EQ_BODY_ARMOUR) | SLOTF(EQ_BOOTS), MR_NO_FLAGS,
     DEFAULT_DURATION, 0, 0, SIZE_CHARACTER, 10,
     {}, true, {},

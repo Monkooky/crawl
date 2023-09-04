@@ -69,6 +69,7 @@
 #include "terrain.h"
 #include "tilepick.h"
 #include "timed-effects.h"
+#include "transform.h"
 #include "traps.h"
 #include "unwind.h"
 #include "viewchar.h"
@@ -2100,6 +2101,9 @@ item_def* monster_die(monster& mons, killer_type killer,
                 canned_msg(MSG_GAIN_MAGIC);
                 inc_mp(mp_heal);
             }
+
+            you.increase_duration(DUR_AMBROSIA, get_form()->quaff_power(false),
+                                  0, "you take a celebratory quaff!");
 
             if (gives_player_xp && you_worship(GOD_RU) && you.piety < 200
                 && one_chance_in(2))

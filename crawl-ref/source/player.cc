@@ -3362,6 +3362,9 @@ bool player::clarity(bool items) const
     if (have_passive(passive_t::clarity))
         return true;
 
+    if (you.form == transformation::maenad)
+        return true;
+
     return actor::clarity(items);
 }
 
@@ -4705,8 +4708,8 @@ void dec_ambrosia_player(int delay)
     if (!you.duration[DUR_AMBROSIA])
         return;
 
-    // ambrosia ends when confusion does.
-    if (!you.confused())
+    // ambrosia ends when confusion does, unless in maenad form.
+    if (!you.confused() && you.form != transformation::maenad)
         you.duration[DUR_AMBROSIA] = 0;
 
     you.duration[DUR_AMBROSIA] = max(0, you.duration[DUR_AMBROSIA] - delay);
@@ -5395,7 +5398,7 @@ bool player::rampaging() const
     return !you_worship(GOD_WU_JIAN)
         && (player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS)
             || you.has_mutation(MUT_ROLLPAGE)
-            || you.form == transformation::dervish
+            || you.form == transformation::maenad
             || actor::rampaging());
 }
 

@@ -426,7 +426,9 @@ public:
     bool effect(bool=true, int=40, bool=true) const override
     {
         const int ambrosia_turns = 3 + random2(8);
-        if (confuse_player(ambrosia_turns, false, true))
+        //maenad form avoids ambrosia confusion
+        if (you.form == transformation::maenad ||
+            confuse_player(ambrosia_turns, false, true))
         {
             print_potion_heal_message();
             mprf("You feel%s invigorated.",

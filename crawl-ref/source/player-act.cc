@@ -341,7 +341,10 @@ random_var player::attack_delay_with(const item_def *projectile, bool rescale,
             attk_delay = div_rand_round(attk_delay * 3, 2);
     }
 
-    if(you.form == transformation::statue)
+    // 0 for all forms besides maenad
+    attk_delay -= 
+        div_rand_round(random_var(get_form()->get_atk_delay_reduction(DELAY_SCALE)),
+                       DELAY_SCALE);
 
     attk_delay = rv::max(attk_delay, random_var(3));
 
