@@ -383,16 +383,15 @@ static const form_entry formdata[] =
     transformation::maenad, MONS_FAUN, "Maenad", "revelling", "maenad",
     "a maddened reveler!",
     20, 27, TALISMAN_MAENAD,
-    SLOTF(EQ_BODY_ARMOUR) | SLOTF(EQ_BOOTS), MR_NO_FLAGS,
+    SLOTF(EQ_BODY_ARMOUR) | SLOTF(EQ_BOOTS) | SLOTF(EQ_SHIELD), MR_NO_FLAGS,
     DEFAULT_DURATION, 0, 0, SIZE_CHARACTER, 10,
     {}, true, {},
     SPWPN_NORMAL, MAGENTA, "", DEFAULT_VERBS,
     FC_DEFAULT, FC_DEFAULT, FC_DEFAULT, true, false,
     "", 0, "", "", "", "",
     { { "manic", "Your attacks are fast." },
-      { "", "You are incredibly evasive." },
-      { "insubstantial", "Your insubstantial body is immune to petrification, constriction, and being set on fire"}
-    }
+      { "revelling", "You quaff ambrosia on kill." },
+      { "rampage", "You rampage towards foes" } }//TODO copy armataur mut
 },
 };
 COMPILE_CHECK(ARRAYSZ(formdata) == NUM_TRANSFORMS);
