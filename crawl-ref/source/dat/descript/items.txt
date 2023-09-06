@@ -760,10 +760,10 @@ A short club with a metal head.
 maenad talisman
 
 A bottomless amphora of ambrosial wine laced with magic.
-The imbiber enters an estatic trance, compelled to estatic dance. Whenever the user
-moves, they begin dancing, and while dancing they strike rapidly and rampage 
-towards foes equally fast. Further, while drinking the ambrosial wine
-the user's mind is inured against other mental effects, and they regenerate rapidly.
+The imbiber enters an estatic trance, compelled to estatic dance. The user's
+frantic motion allows them to strike rapidly and rampage towards foes. On
+killing a foe, the user takes a celebratory quaff of the ambrosia, and they
+are permanently immune to it's befuddling effects.
 
 Neither footwear nor body armour can be worn in this form.
 %%%%

@@ -851,22 +851,20 @@ public:
 
     int ev_bonus(bool get_max) const override
     {
-        return max(0, scaling_value(FormScaling().Base(6).Scaling(9),
+        return max(0, scaling_value(FormScaling().Base(3).Scaling(9),
                                     false, get_max));
     }
 
     //returns scaled attack delay reduction
-    //return ranges from 0 to 2 * scale, corresponding to 0 to 2 auts.
+    //right now reduces by a flat 2 auts
     int get_atk_delay_reduction (int scale) const override
     {
-        const int lvl = max(0, get_level(scale) - min_skill * scale);
-        const int div = (max_skill - min_skill);
-        return 2 * lvl / div;
+        return 2 * scale;
     }
 
     int quaff_power (bool get_max) const override
     {
-        int val = max(0, scaling_value(FormScaling().Base(4).Scaling(6),
+        int val = max(0, scaling_value(FormScaling().Base(3).Scaling(6),
                                     false, get_max));
         return random_range(2, val);
     }

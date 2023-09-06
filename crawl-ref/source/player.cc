@@ -3362,9 +3362,6 @@ bool player::clarity(bool items) const
     if (have_passive(passive_t::clarity))
         return true;
 
-    if (you.form == transformation::maenad)
-        return true;
-
     return actor::clarity(items);
 }
 
