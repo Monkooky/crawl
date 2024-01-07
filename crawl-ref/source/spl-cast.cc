@@ -2431,6 +2431,9 @@ static spret _do_cast(spell_type spell, int powc, const dist& spd,
     case SPELL_DIMENSIONAL_BULLSEYE:
         return cast_dimensional_bullseye(powc, monster_at(target), fail);
 
+    case SPELL_PINBALL:
+        return cast_wizard_pinball(powc, fail);
+
     // other
     case SPELL_BORGNJORS_REVIVIFICATION:
         return cast_revivification(powc, fail);

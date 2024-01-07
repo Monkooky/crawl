@@ -2679,7 +2679,7 @@ static string _extra_passive_effects()
 
     if (you.rampaging())
     {
-        const bool infinite = player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS);
+        const bool infinite = you.infinite_rampaging();
         const char *inf = Options.char_set == CSET_ASCII ? "+inf"
                                                           : "+\u221e"; //"∞"
         passives.emplace_back(

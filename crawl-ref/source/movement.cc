@@ -553,7 +553,7 @@ bool prompt_descent_shortcut(dungeon_feature_type ftype)
 
 static coord_def _rampage_destination(coord_def move, monster* target)
 {
-    if (!player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS))
+    if (!you.infinite_rampaging())
         return you.pos() + move;
     const int dist = grid_distance(you.pos(), target->pos()) - 1;
     return you.pos() + move * dist;
@@ -648,7 +648,7 @@ static spret _rampage_forward(coord_def move)
 {
     ASSERT(!crawl_state.game_is_arena());
 
-    const bool enhanced = player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS);
+    const bool enhanced = you.infinite_rampaging();
     const bool rolling = you.has_mutation(MUT_ROLLPAGE);
     const string noun = enhanced ? "stride" :
                          rolling ? "roll" : "rampage";

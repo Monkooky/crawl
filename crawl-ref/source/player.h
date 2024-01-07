@@ -57,6 +57,8 @@
 #define DESCENT_POIS_BRANCH_KEY "descent_poison_branch"
 #define RAMPAGE_HEAL_KEY "rampage_heal_strength"
 #define RAMPAGE_HEAL_MAX 7
+#define PINBALL_POWER_KEY "pinball_power"
+#define PINBALLIN_KEY "pinballing" //used to determine if rampaged this turn
 
 // display/messaging breakpoints for penalties from Ru's MUT_HORROR
 #define HORROR_LVL_EXTREME  3
@@ -515,6 +517,7 @@ public:
     bool can_swim(bool permanently = false) const;
     bool can_water_walk() const;
     int visible_igrd(const coord_def&) const;
+    bool infinite_rampaging() const override;
     bool rampaging() const override;
     bool is_banished() const override;
     bool is_sufficiently_rested(bool starting=false) const; // Up to rest_wait_percent HP and MP.

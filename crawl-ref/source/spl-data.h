@@ -3675,6 +3675,17 @@ static const struct spell_desc spelldata[] =
     TILEG_LEES_RAPID_DECONSTRUCTION, // close enough
 },
 
+{
+    SPELL_PINBALL, "Wizard Pinball",
+    spschool::translocation,
+    spflag::selfench,
+    7,
+    200,
+    -1, -1,
+    8,
+    TILEG_WEREBLOOD,
+},
+
 // Not an actual spell - dummy entry for (player) Green Draconian breath.
 {
     SPELL_MEPHITIC_BREATH, "Mephitic Breath",

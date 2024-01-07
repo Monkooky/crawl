@@ -358,6 +358,11 @@ int actor::spirit_shield(bool items) const
     return ss;
 }
 
+bool actor::infinite_rampaging() const
+{
+    return false;
+}
+
 bool actor::rampaging() const
 {
     return wearing_ego(EQ_ALL_ARMOUR, SPARM_RAMPAGING)

@@ -1010,6 +1010,16 @@ static void _handle_fugue(int delay)
     }
 }
 
+static void _handle_pinball()
+{
+    if(you.props.exists(PINBALLIN_KEY))
+        you.props.erase(PINBALLIN_KEY);
+    else
+    {
+        you.props.erase(PINBALL_POWER_KEY);
+    }
+}
+
 void player_reacts()
 {
     // don't allow reactions while stair peeking in descent mode
@@ -1028,6 +1038,9 @@ void player_reacts()
         unrand_reacts();
 
     _handle_fugue(you.time_taken);
+
+    if(you.props.exists(PINBALL_POWER_KEY))
+        _handle_pinball();
 
     if (x_chance_in_y(you.time_taken, 10 * BASELINE_DELAY))
     {

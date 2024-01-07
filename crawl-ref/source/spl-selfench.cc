@@ -308,3 +308,11 @@ spret cast_confusing_touch(int power, bool fail)
 
     return spret::success;
 }
+
+spret cast_wizard_pinball(int power, bool fail)
+{
+    fail_check();
+    you.props[PINBALL_POWER_KEY] = power;
+    you.props[PINBALLIN_KEY] = true;
+    return spret::success;
+}

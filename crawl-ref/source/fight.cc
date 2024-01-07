@@ -819,7 +819,9 @@ bool force_player_cleave(coord_def target)
 bool attack_cleaves(const actor &attacker, int which_attack)
 {
     if (attacker.is_player()
-        && (you.form == transformation::storm || you.duration[DUR_CLEAVE]))
+        && (you.form == transformation::storm 
+            || you.duration[DUR_CLEAVE]
+            || you.props.exists(PINBALL_POWER_KEY)))
     {
         return true;
     }

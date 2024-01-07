@@ -1752,6 +1752,10 @@ Wind Blast spell
 
 Causes a strong gust of wind, pushing away creatures and clouds in a cone.
 %%%%
+Wizard Pinball spell
+
+do spell things.aaaaaaaaa
+%%%%
 Woodweal spell
 
 Draws on the vitality of leaf and bark to heal a large amount of damage.

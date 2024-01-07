@@ -5577,9 +5577,15 @@ bool player::airborne() const
         || get_form()->enables_flight();
 }
 
-bool player::rampaging() const
+bool player::infinite_rampaging() const
 {
     return player_equip_unrand(UNRAND_SEVEN_LEAGUE_BOOTS)
+            || you.props.exists(PINBALL_POWER_KEY);
+}
+
+bool player::rampaging() const
+{
+    return you.infinite_rampaging()
             || you.has_mutation(MUT_ROLLPAGE)
             || actor::rampaging();
 }

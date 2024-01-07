@@ -39,3 +39,5 @@ bool jinxbite_targets_available();
 spret cast_jinxbite(int pow, bool fail);
 
 spret cast_confusing_touch(int power, bool fail);
+
+spret cast_wizard_pinball(int power, bool fail);

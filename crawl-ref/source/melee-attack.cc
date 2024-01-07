@@ -710,6 +710,11 @@ bool melee_attack::handle_phase_damaged()
         {
             _inflict_deathly_blight(*(defender->as_monster()));
         }
+        if (you.props.exists(PINBALL_POWER_KEY) && defender->alive())
+        {
+            const int collide_power = you.props[PINBALL_POWER_KEY];
+            defender->knockback(*attacker, 2, collide_power, "blow");
+        }
     }
 
     return true;
@@ -1051,6 +1056,11 @@ bool melee_attack::attack()
             handle_phase_end();
             return false;
         }
+
+        //Maintain pinball status as an attack was attempted
+        if(you.props.exists(PINBALL_POWER_KEY))
+            you.props[PINBALLIN_KEY] = true;
+
         // Check for stab (and set stab_attempt and stab_bonus)
         player_stab_check();
         // Make sure we hit if we passed the stab check.
