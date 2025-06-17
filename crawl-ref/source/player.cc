@@ -1565,6 +1565,8 @@ int player_spec_fire()
 
     sf += you.wearing_jewellery(RING_FIRE);
 
+    sf += you.wearing_ego(OBJ_ARMOUR, SPARM_FIRE);
+
     sf += you.scan_artefacts(ARTP_ENHANCE_FIRE);
 
     if (you.unrand_equipped(UNRAND_ELEMENTAL_STAFF))
@@ -1581,6 +1583,8 @@ int player_spec_cold()
 
     sc += you.wearing_jewellery(RING_ICE);
 
+    sc += you.wearing_ego(OBJ_ARMOUR, SPARM_ICE);
+
     sc += you.scan_artefacts(ARTP_ENHANCE_ICE);
 
     if (you.unrand_equipped(UNRAND_ELEMENTAL_STAFF))
@@ -1596,6 +1600,8 @@ int player_spec_earth()
     // Staves
     se += you.wearing(OBJ_STAVES, STAFF_EARTH);
 
+    se += you.wearing_ego(OBJ_ARMOUR, SPARM_EARTH);
+
     se += you.scan_artefacts(ARTP_ENHANCE_EARTH);
 
     if (you.unrand_equipped(UNRAND_ELEMENTAL_STAFF))
@@ -1610,6 +1616,8 @@ int player_spec_air()
 
     // Staves
     sa += you.wearing(OBJ_STAVES, STAFF_AIR);
+
+    sa += you.wearing_ego(OBJ_ARMOUR, SPARM_AIR);
 
     sa += you.scan_artefacts(ARTP_ENHANCE_AIR);
 
