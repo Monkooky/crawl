@@ -748,6 +748,12 @@ static const duration_def duration_data[] =
       "Your melee attacks are strengthened by primal bloodlust.", D_EXPIRES,
       {{ "Your bloodlust subsides." },
        { "You feel your bloodlust ebbing." }}, 6},
+    { DUR_PARRYING, 0, "",
+      "parry", "parrying",
+      "You are parrying attacks and have increased SH.", D_NO_FLAGS,
+      {{ "", []() {
+          you.redraw_armour_class = true;
+      }}}},
     //TODO this needs rewrite
     { DUR_GASTRONOMIC, MAGENTA, "Gut", "transposing a stomach", "gastronomic expanse",
       "You are transposing a stomach with part of the dungeon.", D_DISPELLABLE,},
