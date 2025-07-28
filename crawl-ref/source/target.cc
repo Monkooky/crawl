@@ -2651,7 +2651,7 @@ bool targeter_tempering::valid_aim(coord_def a)
 
     monster* mons = monster_at(a);
     if (!mons || !you.can_see(*mons) || !mons->friendly())
-        return false;
+        return notify_fail("There's nothing to be tempered there.");
 
     if (mons->has_ench(ENCH_TEMPERED))
         return notify_fail("You cannot target a construct which is already augmented.");
