@@ -3586,7 +3586,7 @@ static string _get_cloud_desc(const coord_def& where)
     if (is_gastronomic(where))
         areas.emplace_back("slowly being digested");
     if (env.map_knowledge(where).flags & MAP_CORRODING
-        && env.map_knowledge(where).feat() == DNGN_FLOOR)
+        && !feat_is_wall(env.map_knowledge(where).feat()))
     {
         areas.emplace_back("is covered in acidic slime");
     }
