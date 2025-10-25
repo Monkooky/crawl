@@ -4765,51 +4765,64 @@ static coord_def _get_gastronomic_center()
     return center;
 }
 
+void actor_apply_gastronomic_expanse(actor *act, int delay){
+    act->corrode(&you);
+
+    int pow = you.props[GASTRONOMIC_POWER_KEY].get_int();
+    int unadjusted = gastronomic_damage(pow, true).roll();
+    int ac_adjusted = act->apply_ac(unadjusted);
+    int delay_adjusted = div_rand_round(ac_adjusted * delay, BASELINE_DELAY);
+
+    bolt beam;
+    beam.flavour = BEAM_ACID;
+    beam.thrower = KILL_YOU;
+    const int damage = (act->is_monster())
+                        ? mons_adjust_flavoured(act->as_monster(), beam, delay_adjusted)
+                        : check_your_resists(delay_adjusted, BEAM_ACID, "gastronomic expanse", &beam);
+
+    act->hurt(&you, damage, BEAM_ACID, KILLED_BY_BEAM);
+    if (act->is_monster())
+        behaviour_event(act->as_monster(), ME_WHACK, &you);
+}
+
 void gastronomic_expanse_effect(int delay)
 {
+    bool adjacent_mon = false;
+    for (adjacent_iterator adj(you.pos()); adj; ++adj)
+    {
+        monster* target = monster_at(*adj);
+        if (target && target->alive() && !target->is_firewood())
+        {
+            adjacent_mon = true;
+            actor_apply_gastronomic_expanse(target, delay);
+        }
+    }
+
+    if (!adjacent_mon)
+    {
+        actor_apply_gastronomic_expanse(&you, delay);
+    }
+
     for (monster_near_iterator mi(you.pos()); mi; ++mi)
     {
         if (!is_gastronomic(mi->pos())
-            || mi->wont_attack() || mons_is_firewood(**mi))
+            || mi->wont_attack() || mi->is_firewood())
         {
             continue;
         }
 
-        mi->corrode_equipment();
 
-        int pow = you.props[GASTRONOMIC_POWER_KEY].get_int();
-        int unadjusted = gastronomic_damage(pow, true).roll();
-        int ac_adjusted = mi->apply_ac(unadjusted);
-        int delay_adjusted = div_rand_round(ac_adjusted * delay, BASELINE_DELAY);
-
-        bolt beam;
-        beam.flavour = BEAM_ACID;
-        beam.thrower = KILL_YOU;
-        int dam = mons_adjust_flavoured(*mi, beam, delay_adjusted);
-
-        mi->hurt(&you, dam, BEAM_ACID, KILLED_BY_BEAM);
-        behaviour_event(*mi, ME_WHACK, &you);
     }
-
-    if (is_gastronomic(you.pos()))
-    {
-        if (x_chance_in_y(delay, GASTRONOMIC_SELF_CORR))
-            you.corrode_equipment("the gastric acid");
-    }
-    else
-        you.props[GASTRONOMIC_RETRACTING_KEY] = true;
 }
+
 
 //Set
 void set_gastronomic_radius(int radius)
 {
     int max_radius = get_gastronomic_radius(true);
-    coord_def center = _get_gastronomic_center();
+    coord_def center = you.pos();
 
-    for (distance_iterator di(center, false, false, max_radius + 1); di; ++di)
-        env.pgrid(*di) &= ~FPROP_GASTRONOMY;
-
-    for (distance_iterator di(center, false, false, radius); di; ++di)
+    for (distance_iterator di(center, false, false, 1); di; ++di)
         env.pgrid(*di) |= FPROP_GASTRONOMY;
 }
 

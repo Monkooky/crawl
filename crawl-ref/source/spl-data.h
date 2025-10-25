@@ -4562,14 +4562,6 @@ static const struct spell_desc spelldata[] =
 },
 
 {
-    SPELL_GASTRONOMIC_EXPANSE, "Gastronomic Expanse",
-    spschool::alchemy | spschool::translocation,
-    spflag::target | spflag::area | spflag::unclean | spflag::destructive,
-    8,
-    200,
-    1, 1,
-    0,
-    TILEG_GAVOTTE,
     SPELL_ILL_OMEN, "Ill Omen",
     spschool::hexes,
     spflag::dir_or_target | spflag::needs_tracer | spflag::monster,
@@ -4578,6 +4570,17 @@ static const struct spell_desc spelldata[] =
     LOS_RADIUS, LOS_RADIUS,
     0,
     TILEG_ILL_OMEN,
+},
+
+{
+    SPELL_GASTRONOMIC_EXPANSE, "Gastronomic Expanse",
+    spschool::alchemy | spschool::translocation,
+    spflag::target | spflag::area | spflag::unclean | spflag::destructive,
+    8,
+    200,
+    1, 1,
+    0,
+    TILEG_GAVOTTE,
 },
 
 {
