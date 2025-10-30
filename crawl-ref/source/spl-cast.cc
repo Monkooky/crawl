@@ -2649,6 +2649,9 @@ static spret _do_cast(spell_type spell, int powc, const dist& spd,
     case SPELL_RENDING_BLADE:
         return cast_rending_blade(powc, fail);
 
+    case SPELL_GASTRONOMIC_EXPANSE:
+        return cast_gastronomic_expanse(powc, spd.target, fail);
+
     // Enchantments.
     case SPELL_CONFUSING_TOUCH:
         return cast_confusing_touch(powc, fail);
@@ -3136,6 +3139,8 @@ static dice_def _spell_damage(spell_type spell, int power)
             return detonation_catalyst_damage(power, false);
         case SPELL_JINXBITE:
             return jinxbite_damage(power,false);
+        case SPELL_GASTRONOMIC_EXPANSE:
+            return gastronomic_damage(power, false);
         default:
             break;
     }

@@ -706,6 +706,18 @@ static void _decrement_rampage_heal_duration(int delay)
     }
 }
 
+static void _handle_gastronomic_expanse_duration(int delay)
+{
+    if (_decrement_a_duration(DUR_GASTRONOMIC, delay))
+    {
+        end_gastronomic_expanse();
+        return;
+    }
+    //TODO: fiddle with ratios here
+
+    spread_gastronomic_expanse(2);
+}
+
 /**
  * Take a 'simple' duration, decrement it, and print messages as appropriate
  * when it hits 50% and 0% remaining.
@@ -918,6 +930,12 @@ static void _decrement_durations()
 
     if (you.duration[DUR_FATHOMLESS_SHACKLES])
         yred_fathomless_shackles_effect(min(delay, you.duration[DUR_FATHOMLESS_SHACKLES]));
+
+    if (you.duration[DUR_GASTRONOMIC])
+    {
+        gastronomic_expanse_effect(min(delay, you.duration[DUR_GASTRONOMIC]));
+        _handle_gastronomic_expanse_duration(delay);
+    }
 
     if (you.duration[DUR_RECITE] && _check_recite())
     {

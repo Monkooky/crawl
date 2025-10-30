@@ -4751,6 +4751,100 @@ spret cast_noxious_bog(int pow, bool fail)
     return spret::success;
 }
 
+void actor_apply_gastronomic_expanse(actor *act, int delay){
+    act->corrode(&you);
+
+    int pow = you.props[GASTRONOMIC_POWER_KEY].get_int();
+    int unadjusted = gastronomic_damage(pow, true).roll();
+    int ac_adjusted = act->apply_ac(unadjusted);
+    int delay_adjusted = div_rand_round(ac_adjusted * delay, BASELINE_DELAY);
+
+    bolt beam;
+    beam.flavour = BEAM_ACID;
+    beam.thrower = KILL_YOU;
+    const int damage = (act->is_monster())
+                        ? mons_adjust_flavoured(act->as_monster(), beam, delay_adjusted)
+                        : check_your_resists(delay_adjusted, BEAM_ACID, "gastronomic expanse", &beam);
+
+    act->hurt(&you, damage, BEAM_ACID, KILLED_BY_BEAM);
+    if (act->is_monster())
+        behaviour_event(act->as_monster(), ME_WHACK, &you);
+}
+
+void gastronomic_expanse_effect(int delay)
+{
+    bool adjacent_mon = false;
+    for (adjacent_iterator adj(you.pos()); adj; ++adj)
+    {
+        monster* target = monster_at(*adj);
+        if (target && target->alive() && !target->is_firewood())
+        {
+            adjacent_mon = true;
+            actor_apply_gastronomic_expanse(target, delay);
+        }
+    }
+
+    if (!adjacent_mon)
+    {
+        actor_apply_gastronomic_expanse(&you, delay);
+    }
+
+    for (monster_near_iterator mi(you.pos()); mi; ++mi)
+    {
+        if (!is_gastronomic(mi->pos())
+            || mi->wont_attack() || mi->is_firewood())
+        {
+            continue;
+        }
+
+        actor_apply_gastronomic_expanse(*mi, delay);
+    }
+}
+
+
+//Set
+void spread_gastronomic_expanse(int radius)
+{
+    coord_def center = you.pos();
+
+    for (distance_iterator di(center, false, false, radius); di; ++di)
+        env.pgrid(*di) |= FPROP_GASTRONOMY;
+}
+
+spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail)
+{
+    if (you.duration[DUR_GASTRONOMIC])
+    {
+        mpr("You are already maintaining an expanse.");
+        return spret::abort;
+    }
+
+    fail_check();
+
+    you.props[GASTRONOMIC_ORIGIN_KEY] = you.pos();
+    you.props[GASTRONOMIC_POWER_KEY] = pow;
+    you.duration[DUR_GASTRONOMIC] = 110;
+
+    spread_gastronomic_expanse(1);
+
+    return spret::success;
+}
+
+void end_gastronomic_expanse()
+{   
+    //iterate over entire map and remove the fprop
+    for (rectangle_iterator ri(0); ri; ++ri)
+        env.pgrid(*ri) &= ~FPROP_GASTRONOMY;
+}
+
+dice_def gastronomic_damage(int pow, bool random)
+{
+    int size = 6 + pow * 3 / 8;
+    if (random)
+        size = 6 + div_rand_round(pow * 3, 8);
+    return dice_def(2, size);
+}
+
 int siphon_essence_range() { return 2; }
 
 bool siphon_essence_affects(const monster &m)

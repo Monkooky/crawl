@@ -4507,17 +4507,6 @@ static const struct spell_desc spelldata[] =
 },
 
 {
-    SPELL_ILL_OMEN, "Ill Omen",
-    spschool::hexes,
-    spflag::dir_or_target | spflag::needs_tracer | spflag::monster,
-    4,
-    200,
-    LOS_RADIUS, LOS_RADIUS,
-    0,
-    TILEG_ILL_OMEN,
-},
-
-{
     SPELL_DOOM_BOLT, "Doom Bolt",
     spschool::conjuration | spschool::hexes,
     spflag::dir_or_target | spflag::monster | spflag::needs_tracer,
@@ -4570,6 +4559,28 @@ static const struct spell_desc spelldata[] =
     5, 5,
     0,
     TILEG_ACID_BALL,
+},
+
+{
+    SPELL_ILL_OMEN, "Ill Omen",
+    spschool::hexes,
+    spflag::dir_or_target | spflag::needs_tracer | spflag::monster,
+    4,
+    200,
+    LOS_RADIUS, LOS_RADIUS,
+    0,
+    TILEG_ILL_OMEN,
+},
+
+{
+    SPELL_GASTRONOMIC_EXPANSE, "Gastronomic Expanse",
+    spschool::alchemy | spschool::translocation,
+    spflag::area | spflag::unclean | spflag::destructive,
+    7,
+    200,
+    1, 1,
+    0,
+    TILEG_GAVOTTE,
 },
 
 {
