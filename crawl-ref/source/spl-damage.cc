@@ -4852,7 +4852,7 @@ spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail)
     fail_check();
 
     you.props[GASTRONOMIC_POWER_KEY] = pow;
-    you.duration[DUR_GASTRONOMIC] = 110;
+    you.duration[DUR_GASTRONOMIC] = 400;
 
     spread_gastronomic_expanse();
 
