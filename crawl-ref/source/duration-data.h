@@ -763,6 +763,8 @@ static const duration_def duration_data[] =
       {{ "", []() {
           you.redraw_armour_class = true;
       }}}},
+    { DUR_GASTRONOMIC, MAGENTA, "Gut", "transposing a stomach", "gastronomic expanse",
+      "You are transposing a stomach with part of the dungeon.", D_DISPELLABLE,},
 
     // The following are visible in wizmode only, or are handled
     // specially in the status lights and/or the % or @ screens.

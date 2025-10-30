@@ -504,6 +504,9 @@ void revive()
     if (you.duration[DUR_BLOOD_FOR_BLOOD])
         beogh_end_blood_for_blood();
 
+    if (you.duration[DUR_GASTRONOMIC])
+        end_gastronomic_expanse();
+
     // TODO: this doesn't seem to call any duration end effects?
     for (int dur = 0; dur < NUM_DURATIONS; dur++)
     {

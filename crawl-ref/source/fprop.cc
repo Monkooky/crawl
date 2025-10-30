@@ -42,6 +42,11 @@ bool is_tide_immune(const coord_def &p)
     return bool(env.pgrid(p) & FPROP_NO_TIDE);
 }
 
+bool is_gastronomic(const coord_def& p)
+{
+    return !cell_is_solid(p) && testbits(env.pgrid(p), FPROP_GASTRONOMY);
+}
+
 feature_property_type str_to_fprop(const string &str)
 {
     if (str == "bloody")

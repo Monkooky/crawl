@@ -26,7 +26,7 @@ const int GRAVE_CLAW_MAX_CHARGES = 3;
 #define FUSILLADE_POWER_KEY "fusillade_power"
 #define GRAVE_CLAW_CHARGES_KEY "grave_claw_charges"
 #define FORTRESS_BLAST_POS_KEY "fortress_blast_pos"
-
+#define GASTRONOMIC_POWER_KEY "gastronomic_expanse_power"
 
 void setup_fire_storm(const actor *source, int pow, bolt &beam);
 spret cast_fire_storm(int pow, bolt &beam, bool fail);
@@ -153,6 +153,12 @@ vector<coord_def> find_bog_locations(const coord_def &center);
 
 vector<coord_def> find_near_hostiles(int range, bool affect_invis,
                                      const actor& agent);
+
+spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail);
+void gastronomic_expanse_effect(int delay);
+void spread_gastronomic_expanse(int radius);
+void end_gastronomic_expanse();
+dice_def gastronomic_damage(int pow, bool random);
 
 int siphon_essence_range();
 bool siphon_essence_affects(const monster &m);

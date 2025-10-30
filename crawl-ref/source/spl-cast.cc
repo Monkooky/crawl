@@ -2548,6 +2548,9 @@ static spret _do_cast(spell_type spell, int powc, const dist& spd,
     case SPELL_FROZEN_RAMPARTS:
         return cast_frozen_ramparts(powc, fail);
 
+    case SPELL_GASTRONOMIC_EXPANSE:
+        return cast_gastronomic_expanse(powc, spd.target, fail);
+
     // Summoning spells, and other spells that create new monsters.
     case SPELL_SUMMON_SMALL_MAMMAL:
         return cast_summon_small_mammal(powc, fail);
@@ -3153,6 +3156,8 @@ static dice_def _spell_damage(spell_type spell, int power)
             return detonation_catalyst_damage(power, false);
         case SPELL_JINXBITE:
             return jinxbite_damage(power,false);
+        case SPELL_GASTRONOMIC_EXPANSE:
+            return gastronomic_damage(power, false);
         default:
             break;
     }

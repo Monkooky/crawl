@@ -39,6 +39,7 @@ enum feature_property_type
     FPROP_SEISMOROCK    = (1 << 21),
     // Don't reveal this tiles when fully mapping a branch on entry
     FPROP_NO_AUTOMAP    = (1 << 22),
+    FPROP_GASTRONOMY    = (1 << 23),
 };
 DEF_BITFIELD(terrain_property_t, feature_property_type);
 
@@ -48,3 +49,4 @@ bool is_tide_immune(const coord_def &p);
 feature_property_type str_to_fprop(const string &str);
 bool is_icecovered(const coord_def& p);
 bool is_blasphemy(const coord_def& p);
+bool is_gastronomic(const coord_def& p);
