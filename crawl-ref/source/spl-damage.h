@@ -28,9 +28,7 @@ const int GRAVE_CLAW_MAX_CHARGES = 3;
 #define FORTRESS_BLAST_POS_KEY "fortress_blast_pos"
 
 #define GASTRONOMIC_POWER_KEY "gastronomic_expanse_power"
-#define GASTRONOMIC_DIRECTION_KEY "gastronomic_expanse_direction"
 #define GASTRONOMIC_ORIGIN_KEY "gastronomic_expanse_center"
-#define GASTRONOMIC_RETRACTING_KEY "gastronomic_expanse_state"
 #define GASTRONOMIC_MAX_DUR 80 //maximum duration for gastronomic expanse
 #define GASTRONOMIC_SELF_CORR 20 //avg auts/corrosion application
 
@@ -161,8 +159,7 @@ vector<coord_def> find_near_hostiles(int range, bool affect_invis,
 
 spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail);
 void gastronomic_expanse_effect(int delay);
-void set_gastronomic_radius(int radius);
-int get_gastronomic_radius(bool get_max = false);
+void spread_gastronomic_expanse(int radius);
 void end_gastronomic_expanse();
 dice_def gastronomic_damage(int pow, bool random);
 

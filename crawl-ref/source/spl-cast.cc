@@ -1506,8 +1506,6 @@ unique_ptr<targeter> find_spell_targeter(spell_type spell, int pow, int range)
                                                    _simple_find_all_hostiles());
     case SPELL_NOXIOUS_BOG:
         return make_unique<targeter_bog>(&you);
-    case SPELL_GASTRONOMIC_EXPANSE:
-        return make_unique<targeter_gastronomic>(&you, pow);
     case SPELL_FLAME_WAVE:
         return make_unique<targeter_flame_wave>(range);
     case SPELL_GOLUBRIAS_PASSAGE:

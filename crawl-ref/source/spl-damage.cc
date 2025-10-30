@@ -4751,20 +4751,6 @@ spret cast_noxious_bog(int pow, bool fail)
     return spret::success;
 }
 
-int get_gastronomic_radius(bool get_max)
-{
-    int dur = get_max ? GASTRONOMIC_MAX_DUR : you.duration[DUR_GASTRONOMIC];
-    return dur / 10;
-}
-
-static coord_def _get_gastronomic_center()
-{
-    int radius = get_gastronomic_radius();
-    coord_def center = you.props[GASTRONOMIC_ORIGIN_KEY].get_coord();
-    center += you.props[GASTRONOMIC_DIRECTION_KEY].get_coord() * radius;
-    return center;
-}
-
 void actor_apply_gastronomic_expanse(actor *act, int delay){
     act->corrode(&you);
 
@@ -4811,18 +4797,17 @@ void gastronomic_expanse_effect(int delay)
             continue;
         }
 
-
+        actor_apply_gastronomic_expanse(*mi, delay);
     }
 }
 
 
 //Set
-void set_gastronomic_radius(int radius)
+void spread_gastronomic_expanse(int radius)
 {
-    int max_radius = get_gastronomic_radius(true);
     coord_def center = you.pos();
 
-    for (distance_iterator di(center, false, false, 1); di; ++di)
+    for (distance_iterator di(center, false, false, radius); di; ++di)
         env.pgrid(*di) |= FPROP_GASTRONOMY;
 }
 
@@ -4836,26 +4821,20 @@ spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail)
 
     fail_check();
 
-    coord_def delta = target - you.pos();
-
-
-    you.props[GASTRONOMIC_DIRECTION_KEY] = delta.sgn();
     you.props[GASTRONOMIC_ORIGIN_KEY] = you.pos();
-    you.props[GASTRONOMIC_RETRACTING_KEY] = false;
     you.props[GASTRONOMIC_POWER_KEY] = pow;
-    you.duration[DUR_GASTRONOMIC] = 11;
+    you.duration[DUR_GASTRONOMIC] = 110;
 
-    set_gastronomic_radius(1);
+    spread_gastronomic_expanse(1);
 
     return spret::success;
 }
 
 void end_gastronomic_expanse()
-{
-    if (!you.props.exists(GASTRONOMIC_ORIGIN_KEY))
-        return;
-
-    set_gastronomic_radius(-1);
+{   
+    //iterate over entire map and remove the fprop
+    for (rectangle_iterator ri(0); ri; ++ri)
+        env.pgrid(*ri) &= ~FPROP_GASTRONOMY;
 }
 
 dice_def gastronomic_damage(int pow, bool random)

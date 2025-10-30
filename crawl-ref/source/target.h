@@ -500,14 +500,6 @@ public:
     targeter_bog(const actor *a);
 };
 
-class targeter_gastronomic : public targeter_smite
-{
-public:
-    targeter_gastronomic(const actor *a, int pow);
-    bool valid_aim(coord_def) override;
-};
-
-
 class targeter_ignite_poison : public targeter_multiposition
 {
 public:

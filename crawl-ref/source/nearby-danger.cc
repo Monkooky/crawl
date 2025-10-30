@@ -501,7 +501,7 @@ void revive()
     if (you.duration[DUR_FATHOMLESS_SHACKLES])
         yred_end_blasphemy();
 
-    if (you.duration[DUR_FATHOMLESS_SHACKLES])
+    if (you.duration[DUR_GASTRONOMIC])
         end_gastronomic_expanse();
 
     if (you.duration[DUR_BLOOD_FOR_BLOOD])
