@@ -156,7 +156,7 @@ vector<coord_def> find_near_hostiles(int range, bool affect_invis,
 
 spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail);
 void gastronomic_expanse_effect(int delay);
-void spread_gastronomic_expanse(int radius);
+void spread_gastronomic_expanse();
 void end_gastronomic_expanse();
 dice_def gastronomic_damage(int pow, bool random);
 
