@@ -154,11 +154,12 @@ vector<coord_def> find_bog_locations(const coord_def &center);
 vector<coord_def> find_near_hostiles(int range, bool affect_invis,
                                      const actor& agent);
 
-spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail);
+spret cast_gastronomic_expanse(int pow, bool fail);
 void gastronomic_expanse_effect(int delay);
 void spread_gastronomic_expanse();
 void end_gastronomic_expanse();
-dice_def gastronomic_damage(int pow, bool random);
+dice_def gastronomic_trail_damage(int pow, bool random);
+dice_def gastronomic_extra_damage();
 
 int siphon_essence_range();
 bool siphon_essence_affects(const monster &m);

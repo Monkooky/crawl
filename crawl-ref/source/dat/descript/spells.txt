@@ -840,13 +840,16 @@ Galvanic Breath spell
 %%%%
 Gastronomic Expanse spell
 
-Transposes part of the dungeon with the stomach of a great extraplanar
-beast, which will rapidly digest any creatures within. The effect is
-strongest in the immediate vicinity of the caster, and they are only
-protected so long as there is an adjacent creature to digest instead.
+Transposes the area around the caster with the stomach of a great extraplanar
+beast, attempting to digest any creatures directly adjacent to the caster and
+leaving a trail of acid as the caster moves. The caster is always protected
+from the acid trail, but they are only protected from the digestion so long as
+another creature is adjacent to them.
 
-It is unclear who, if any, commands this great beast, but it is worrying
-that they had to invent a spell to keep it fed.
+The transposition lasts until no monsters are in sight.
+
+Spellpower will increase the damage of the acid trail, but not the additional
+damage from digestion.
 %%%%
 Gell's Gavotte spell
 

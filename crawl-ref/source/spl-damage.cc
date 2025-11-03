@@ -4783,11 +4783,13 @@ spret cast_noxious_bog(int pow, bool fail)
     return spret::success;
 }
 
-void actor_apply_gastronomic_expanse(actor *act, int delay){
+static void _actor_apply_gastronomic_expanse(actor *act, int delay, bool trail){
     act->corrode(&you);
 
     int pow = you.props[GASTRONOMIC_POWER_KEY].get_int();
-    int unadjusted = gastronomic_damage(pow, true).roll();
+    int unadjusted = (trail) 
+                        ? gastronomic_trail_damage(pow, true).roll() 
+                        : gastronomic_extra_damage().roll();
     int ac_adjusted = act->apply_ac(unadjusted);
     int delay_adjusted = div_rand_round(ac_adjusted * delay, BASELINE_DELAY);
 
@@ -4805,6 +4807,7 @@ void actor_apply_gastronomic_expanse(actor *act, int delay){
 
 void gastronomic_expanse_effect(int delay)
 {
+    spread_gastronomic_expanse();
     bool adjacent_mon = false;
     for (adjacent_iterator adj(you.pos()); adj; ++adj)
     {
@@ -4812,13 +4815,13 @@ void gastronomic_expanse_effect(int delay)
         if (target && target->alive() && !target->is_firewood())
         {
             adjacent_mon = true;
-            actor_apply_gastronomic_expanse(target, delay);
+            _actor_apply_gastronomic_expanse(target, delay, false);
         }
     }
 
     if (!adjacent_mon)
     {
-        actor_apply_gastronomic_expanse(&you, delay);
+        _actor_apply_gastronomic_expanse(&you, delay, false);
     }
 
     for (monster_near_iterator mi(you.pos()); mi; ++mi)
@@ -4828,8 +4831,7 @@ void gastronomic_expanse_effect(int delay)
         {
             continue;
         }
-
-        actor_apply_gastronomic_expanse(*mi, delay);
+        _actor_apply_gastronomic_expanse(*mi, delay, true);
     }
 }
 
@@ -4841,7 +4843,7 @@ void spread_gastronomic_expanse()
         env.pgrid(*di) |= FPROP_GASTRONOMY;
 }
 
-spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail)
+spret cast_gastronomic_expanse(int pow, bool fail)
 {
     if (you.duration[DUR_GASTRONOMIC])
     {
@@ -4861,17 +4863,23 @@ spret cast_gastronomic_expanse(int pow, const coord_def &target, bool fail)
 
 void end_gastronomic_expanse()
 {   
-    //iterate over entire map and remove the fprop
+    you.duration[DUR_GASTRONOMIC] = 0;
+    //iterate over entire map
     for (rectangle_iterator ri(0); ri; ++ri)
         env.pgrid(*ri) &= ~FPROP_GASTRONOMY;
 }
 
-dice_def gastronomic_damage(int pow, bool random)
+dice_def gastronomic_trail_damage(int pow, bool random)
 {
-    int size = 6 + pow * 3 / 8;
+    int size = 4 + pow / 12;
     if (random)
-        size = 6 + div_rand_round(pow * 3, 8);
+        size = 4 + div_rand_round(pow, 12);
     return dice_def(2, size);
+}
+
+dice_def gastronomic_extra_damage()
+{
+    return dice_def(2, 10);
 }
 
 int siphon_essence_range() { return 2; }

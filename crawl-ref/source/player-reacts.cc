@@ -933,9 +933,11 @@ static void _decrement_durations()
         yred_fathomless_shackles_effect(min(delay, you.duration[DUR_FATHOMLESS_SHACKLES]));
 
     if (you.duration[DUR_GASTRONOMIC])
-    {
-        _handle_gastronomic_expanse_duration(delay);
-        gastronomic_expanse_effect(delay);
+    {   
+        if(i_feel_safe(false, false, true))
+            end_gastronomic_expanse();
+        else
+            gastronomic_expanse_effect(delay);
     }
 
     if (you.duration[DUR_RECITE] && _check_recite())
