@@ -337,8 +337,6 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_GRUNN:
     case TILEP_MONS_GNOLL_BOUDA:
     case TILEP_MONS_NESSOS_BOWLESS:
-    case TILEP_MONS_ARMATAUR:
-    case TILEP_MONS_PLAYER_SHADOW_ARMATAUR:
     case TILEP_MONS_TENGU:
     case TILEP_MONS_PLAYER_SHADOW_TENGU:
     case TILEP_MONS_TENGU_CONJURER:
@@ -1015,11 +1013,6 @@ bool mcache_monster::get_shield_offset(tileidx_t mon_tile,
         *ofs_y = 1;
         break;
 
-    case TILEP_MONS_ARMATAUR:
-        *ofs_x = -9;
-        *ofs_y = 2;
-        break;
-
     case TILEP_MONS_WIGLAF:
     case TILEP_MONS_FENSTRIDER_WITCH:
         *ofs_x = -1;
@@ -1554,7 +1547,7 @@ mcache_ghost::mcache_ghost(const monster_info& mon)
     if (!Options.tile_grinch && today_is_halloween())
         m_doll.parts[TILEP_PART_HELM] = TILEP_HELM_PUMPKIN;
     else if (m_doll.parts[TILEP_PART_HELM] == TILEP_HELM_PUMPKIN)
-        m_doll.parts[TILEP_PART_HELM] = TILEP_HELM_FIRST_NORM; // every day is *not* halloween
+        m_doll.parts[TILEP_PART_HELM] = TILEP_HELM_NORMAL; // every day is *not* halloween
 
 
     if (ac > 25)
@@ -1715,16 +1708,19 @@ mcache_demon::mcache_demon(const monster_info& minf)
     const uint32_t seed = hash32(&minf.mname[0], minf.mname.size());
 
     m_demon.head = tile_player_coloured(TILEP_DEMON_HEAD,
-                                        element_colour(minf.colour()))
+                                        element_colour(minf.colour(),
+                                                       minf.pos))
         + hash_with_seed(tile_player_count(TILEP_DEMON_HEAD), seed, 1);
     m_demon.body = tile_player_coloured(TILEP_DEMON_BODY,
-                                        element_colour(minf.colour()))
+                                        element_colour(minf.colour(),
+                                                       minf.pos))
         + hash_with_seed(tile_player_count(TILEP_DEMON_BODY), seed, 2);
 
     if (minf.is(MB_AIRBORNE))
     {
         m_demon.wings = tile_player_coloured(TILEP_DEMON_WINGS,
-                                             element_colour(minf.colour()))
+                                             element_colour(minf.colour(),
+                                                            minf.pos))
             + hash_with_seed(tile_player_count(TILEP_DEMON_WINGS), seed, 3);
     }
     else

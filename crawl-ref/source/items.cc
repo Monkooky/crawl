@@ -145,8 +145,7 @@ void link_items()
             continue;
         }
 
-        bool move_below = item_is_stationary(env.item[i])
-            && !item_is_stationary_net(env.item[i]);
+        bool move_below = item_is_stationary(env.item[i]);
         int movable_ind = -1;
         // Stationary item, find index at location
         if (move_below)
@@ -154,7 +153,7 @@ void link_items()
 
             for (stack_iterator si(env.item[i].pos); si; ++si)
             {
-                if (!item_is_stationary(*si) || item_is_stationary_net(*si))
+                if (!item_is_stationary(*si))
                     movable_ind = si->index();
             }
         }
@@ -196,7 +195,7 @@ static bool _item_preferred_to_clean(int item)
     }
 
     if (env.item[item].base_type == OBJ_MISSILES
-        && env.item[item].plus <= 0 && !env.item[item].net_placed // XXX: plus...?
+        && env.item[item].plus <= 0
         && !is_artefact(env.item[item]))
     {
         return true;
@@ -767,6 +766,9 @@ static bool _immune_to_brand(brand_type brand)
         case SPWPN_ELECTROCUTION:
             return you.res_elec() >= 1;
 
+        case SPWPN_ENTANGLING:
+            return you.res_constrict();
+
         default:
             return false;
     }
@@ -806,6 +808,8 @@ bool item_is_worth_listing(const item_def& item)
     case OBJ_WANDS:
     case OBJ_JEWELLERY:
         return true;
+    case OBJ_MISSILES:
+        return item.sub_type != MI_LARGE_ROCK || item_is_branded(item);
     case OBJ_WEAPONS:
         return is_unrandom_artefact(item)
                || get_weapon_brand(item) != SPWPN_NORMAL;
@@ -1600,13 +1604,6 @@ bool items_similar(const item_def &item1, const item_def &item2)
     if (item1.base_type == OBJ_MISSILES && item1.brand != item2.brand)
         return false;
 
-    // Don't merge trapping nets with other nets.
-    if (item1.is_type(OBJ_MISSILES, MI_THROWING_NET)
-        && item1.net_placed != item2.net_placed)
-    {
-        return false;
-    }
-
 #define NO_MERGE_FLAGS (ISFLAG_MIMIC | ISFLAG_SUMMONED)
     if ((item1.flags & NO_MERGE_FLAGS) != (item2.flags & NO_MERGE_FLAGS))
         return false;
@@ -2070,7 +2067,7 @@ static bool _merge_stackable_item_into_inv(const item_def &it, int quant_got,
         you.last_pickup[inv_slot] = quant_got;
 
         // If we are purchasing an identified item from a shop, maybe update our
-        // item slot. (Pre-identified items on the floor will already be handle
+        // item slot. (Pre-identified items on the floor will already be handled
         // by seen_item().)
         const short old_slot = you.inv[inv_slot].slot;
         if (inventory_category_for(it) == INVENT_CONSUMABLE
@@ -2573,7 +2570,7 @@ bool move_item_to_grid(int *const obj, const coord_def& p, bool silent)
         return false;
 
     item_def& item(env.item[ob]);
-    bool move_below = item_is_stationary(item) && !item_is_stationary_net(item);
+    bool move_below = item_is_stationary(item);
 
     if (!silenced(p) && !silent)
         feat_splash_noise(env.grid(p));
@@ -2615,11 +2612,8 @@ bool move_item_to_grid(int *const obj, const coord_def& p, bool silent)
                 }
                 return true;
             }
-            if (move_below
-                && (!item_is_stationary(*si) || item_is_stationary_net(*si)))
-            {
+            if (move_below && !item_is_stationary(*si))
                 movable_ind = si->index();
-            }
         }
     }
     else
@@ -3812,11 +3806,11 @@ colour_t item_def::missile_colour() const
             return LIGHTGREY;
 #if TAG_MAJOR_VERSION == 34
         case MI_NEEDLE:
-#endif
         case MI_ARROW:         // removed as an item, but don't crash
         case MI_BOLT:          // removed as an item, but don't crash
         case MI_SLING_BULLET:  // removed as an item, but don't crash
         case MI_SLUG:          // never existed as an item
+#endif
         case MI_DART:
             return WHITE;
         case MI_JAVELIN:
@@ -4227,10 +4221,14 @@ colour_t item_def::talisman_colour() const
         return ETC_FIRE;
     case TALISMAN_MEDUSA:
         return ETC_POISON;
+    case TALISMAN_SPORE:
+        return BROWN;
     case TALISMAN_MAW:
         return ETC_BLOOD;
     case TALISMAN_SERPENT:
         return ETC_POISON;
+    case TALISMAN_EEL:
+        return LIGHTCYAN;
     case TALISMAN_BLADE:
         return ETC_IRON;
     case TALISMAN_FORTRESS:
@@ -4579,22 +4577,12 @@ static bool _book_from_spell(const char* specs, item_def &item)
     if (type == SPELL_NO_SPELL)
         return false;
 
-    for (int i = 0; i < NUM_BOOKS; ++i)
-    {
-        const auto bt = static_cast<book_type>(i);
-        if (!book_exists(bt))
-            continue;
-        for (spell_type sp : spellbook_template(bt))
-        {
-            if (sp == type)
-            {
-                item.sub_type = i;
-                return true;
-            }
-        }
-    }
+    if (!is_player_book_spell(type))
+        return false;
 
-    return false;
+    item.sub_type = BOOK_PARCHMENT;
+    item.plus = static_cast<int>(type);
+    return true;
 }
 
 bool get_item_by_name(item_def *item, const char* specs,
@@ -4634,14 +4622,14 @@ bool get_item_by_name(item_def *item, const char* specs,
         for (const auto i : all_item_subtypes(item->base_type))
         {
             item->sub_type = i;
-            size_t pos = lowercase_string(item->name(DESC_PLAIN)).find(specs);
+            size_t pos = lowercase_string(item->name(DESC_DBNAME)).find(specs);
             if (pos != string::npos)
             {
                 // Earliest match is the winner.
                 if (pos < best_index)
                 {
                     if (create_for_real)
-                        mpr(item->name(DESC_PLAIN));
+                        mpr(item->name(DESC_DBNAME));
                     type_wanted = i;
                     best_index = pos;
                 }
@@ -4659,7 +4647,7 @@ bool get_item_by_name(item_def *item, const char* specs,
             switch (class_wanted)
             {
             case OBJ_BOOKS:
-                // Try if we get a match against a spell.
+                // Make a parchment if we get a match against a spell.
                 if (_book_from_spell(specs, *item))
                     type_wanted = item->sub_type;
                 break;
@@ -4772,6 +4760,16 @@ bool get_item_by_name(item_def *item, const char* specs,
                 item->skill = SK_FIGHTING; // Was probably that anyway.
             }
             item->skill_points = random_range(2000, 3000);
+        }
+        else if (item->sub_type == BOOK_PARCHMENT)
+        {
+            char buf[80];
+            msgwin_get_line_autohist("What parchment spell? ", buf, sizeof(buf));
+            if (buf[0] != '\0')
+            {
+                if (!_book_from_spell(buf, *item))
+                    mpr("That parchment doesn't seem to exist.");
+            }
         }
         else if (type_wanted == BOOK_RANDART_THEME)
             build_themed_book(*item, capped_spell_filter(20));
@@ -5047,8 +5045,7 @@ bool maybe_identify_base_type(item_def &item)
 void name_weapon(item_def &item)
 {
     string name = getRandMonNameString("steelspirit");
-    if (name == "RANDGEN")
-        name = make_name();
+    name = do_mon_name_replacements(name);
     item.props[WEAPON_NAME_KEY] = name;
 
     if (!item.inscription.empty())
@@ -5100,33 +5097,6 @@ void say_farewell_to_weapon(const item_def &item)
 
     // TODO: variant messages? (in the database?)
     mprf("You whisper farewell to %s.", name.c_str());
-}
-
-// If there are more than one net on this square
-// split off one of them for checking/setting values.
-void maybe_split_nets(item_def &item, const coord_def& where)
-{
-    if (item.quantity == 1)
-    {
-        set_net_stationary(item);
-        return;
-    }
-
-    item_def it;
-
-    it.base_type = item.base_type;
-    it.sub_type  = item.sub_type;
-    it.net_durability      = item.net_durability;
-    it.net_placed  = item.net_placed;
-    it.flags     = item.flags;
-    it.special   = item.special;
-    it.quantity  = --item.quantity;
-    item_colour(it);
-
-    item.quantity = 1;
-    set_net_stationary(item);
-
-    copy_item_to_grid(it, where);
 }
 
 // Returns whether an additional copy of a given item in the player's inventory

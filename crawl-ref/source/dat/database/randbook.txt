@@ -1058,7 +1058,7 @@ Bruises
 
 Combat Magic
 
-Concussion
+Collision
 
 Conflict
 
@@ -1330,6 +1330,8 @@ the Tropics
 the Volcano
 %%%%
 Hexes
+
+Ambsace
 
 Anathema
 

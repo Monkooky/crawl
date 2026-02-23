@@ -5,9 +5,11 @@
 
 #pragma once
 
-void player_did_deliberate_movement(bool rampaging = false);
+void player_displace_monster(monster* mons, const coord_def &loc);
+
+void player_did_deliberate_movement();
 void remove_ice_movement();
-bool cancel_harmful_move(bool physically = true, bool rampaging = false);
+bool cancel_harmful_move(bool physically = true);
 void apply_noxious_bog(const coord_def old_pos);
 bool apply_cloud_trail(const coord_def old_pos);
 bool cancel_confused_move(bool stationary);
@@ -17,3 +19,5 @@ bool prompt_dangerous_portal(dungeon_feature_type ftype);
 bool prompt_descent_shortcut(dungeon_feature_type ftype);
 monster *get_rampage_target(coord_def move);
 void move_player_action(coord_def move);
+
+void east_wind_expose_monster(monster* mon);

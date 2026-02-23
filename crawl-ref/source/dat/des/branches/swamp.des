@@ -329,11 +329,11 @@ tttttt
 ENDMAP
 
 NAME:   mainiacjoe_swamp_entry_angry_trees
-TAGS:   swamp_entry transparent patrolling
+TAGS:   swamp_entry transparent no_monster_gen patrolling
 MONS:   spriggan druid ; mundane damaged quarterstaff . robe
 MONS:   spriggan, bullfrog w:8 / hornet / swamp drake
 KFEAT:  O = enter_swamp
-NSUBST: S = 1:1 / *:T, T = 1:122 / 2:3 / 1:3tt / 16:t / *:.
+NSUBST: S = 1:1 / *:T, T = 1:2 / 2:3 / 1:3tt / 16:t / *:.
 MARKER: O = lua:fog_machine { \
              pow_min = 8, pow_max = 12, delay = 25, \
              size = 2, walk_dist = 1, spread_rate= 33 }
@@ -463,17 +463,18 @@ WEIGHT: 8
 #####
 NAME: nicolae_swamp_fairy_circle
 TAGS: transparent extra decor
-SUBST: W = .W, w = wwwW, q = w
-MONS: fungus / nothing w:7
+MONS: fungus
+ITEM: spore talisman
+SUBST: 1 = 1 .:7, d = d.., W = .W, w = wwwW, q = w
 MAP
     ...
   ..111..
  .11WWW11.
- .1WWwWW1.
+ .1WWwWW1d
 .1WWwwwWW1.
 .1WwwqwwW1.
 .1WWwwwWW1.
- .1WWwWW1.
+ d1WWwWW1.
  .11WWW11.
   ..111..
     ...
@@ -481,8 +482,7 @@ ENDMAP
 
 NAME: nicolae_swamp_treefoil
 TAGS: transparent extra decor
-SUBST: T = t.
-KFEAT: . = . w:30 / W
+SUBST: T = t., . = ...W
 MAP
 tt       @     tt
  ttt....T.T...Tttt
@@ -1862,9 +1862,7 @@ KPROP:  w = no_tele_into
 MARKER: K = lua:fog_machine { cloud_type="black smoke", \
                               pow_min = 10, pow_max = 30, delay = 50, \
                               size = 1, walk_dist = 2, spread_rate = 25 }
-MARKER: L = lua:fog_machine { cloud_type="flame", \
-                              pow_min = 100, pow_max = 100, delay = 100, \
-                              size = 1, excl_rad = 0, walk_dist = 0 }
+: single_cloud(_G, "L", "flame", false)
 MAP
      wwwwww
     wwxxxxww
@@ -2468,9 +2466,7 @@ KFEAT:  n = iron_grate
 SUBST:  e = ddee. *:5
 SUBST:  2 = 222. *:1
 NSUBST: 3 = 3 / f / .
-MARKER: O = lua:fog_machine {   cloud_type = "flame", pow_min = 10, \
-                                pow_max = 10, delay = 10, size = 1, \
-                                walk_dist = 0, excl_rad = 0 }
+: single_cloud(_G, "O", "flame", false)
 MAP
     xxxxx@t
     xxOxxWt
@@ -3190,7 +3186,7 @@ TAGS:    no_rotate
 MONS:    swamp dragon, swamp drake, hydra
 MONS:    thorn hunter / shambling mangrove / spriggan druid
 KMONS:   O = fire dragon w:1 / ice dragon w:1 / hydra w:18
-KMONS:   & = the lernaean hydra
+KMONS:   & = lernaean hydra
 KITEM:   R = mossy gem
 KITEM:   O& = decaying rune of Zot
 SHUFFLE: 12
@@ -3233,7 +3229,7 @@ MONS:    swamp dragon, swamp drake, hydra, lindwurm, rime drake, bog body
 MONS:    thorn hunter / shambling mangrove / spriggan druid
 KMONS:   O = fire dragon w:2 / hydra w:18
 KMONS:   P = ice dragon w:2 / hydra w:18
-KMONS:   & = the lernaean hydra
+KMONS:   & = lernaean hydra
 KITEM:   R = mossy gem
 KITEM:   OP& = decaying rune of Zot
 SHUFFLE: OR / de, 123,  lLO4 / wWP5, 56
@@ -3273,7 +3269,7 @@ PLACE:   Swamp:$
 WEIGHT:  20
 ORIENT:  southeast
 MONS:    swamp dragon, hydra, swamp drake
-MONS:    the lernaean hydra
+MONS:    lernaean hydra
 KITEM:   R = mossy gem
 KITEM:   O = decaying rune of Zot
 SHUFFLE: ab, 12
@@ -3444,7 +3440,7 @@ PLACE:   Swamp:$
 ORIENT:  float
 MONS:    swamp dragon, swamp drake, hydra, bog body
 MONS:    fungus w:12 / plant w:5 / bush w:1
-KMONS:   d = patrolling the lernaean hydra / hydra w:1, hydra
+KMONS:   d = patrolling lernaean hydra / hydra w:1, hydra
 KMONS:   ef = patrolling hydra
 KMONS:   P = pile of debris
 KITEM:   d = decaying rune of Zot
@@ -3492,7 +3488,7 @@ ORIENT:  float
 WEIGHT:  20
 KMONS:   1 =  swamp dragon / swamp drake / hydra w:15 / bog body w:5
 : if crawl.one_chance_in(11) then
-     KMONS: O = the lernaean hydra
+     KMONS: O = lernaean hydra
 : else
      KMONS: O* = thorn hunter / shambling mangrove / spriggan berserker
      KITEM: * = *
@@ -3544,7 +3540,7 @@ MONS:    patrolling spriggan druid god:fedhas
 KMONS:   p = plant
 KMONS:   ' = oklob plant
 KMONS:   q = ghoul
-KMONS:   L = patrolling the lernaean hydra zombie
+KMONS:   L = patrolling lernaean hydra zombie
 KITEM:   o = mossy gem
 KITEM:   O = decaying rune of Zot
 KFEAT:   _ = altar_fedhas
@@ -3608,9 +3604,7 @@ KFEAT:  B = stone_arch
 KFEAT:  a = c
 NSUBST: ' = 16:4 / 6 = 4. / * = W:55 .:20
 SUBST:  4 = 004449, b = baaaa
-MARKER: B = lua:fog_machine { cloud_type = "flame", pow_min = 10, \
-                              pow_max = 10, delay = 10, size = 1, \
-                              walk_dist = 0, excl_rad = 0 }
+: single_cloud(_G, "B", "flame", false)
 TILE:   a = wall_stone_dark
 COLOUR: a = magenta
 TILE:   G = dngn_statue_demonic_bust / dngn_statue_imp / dngn_statue_cerebov \

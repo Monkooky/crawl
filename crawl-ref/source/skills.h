@@ -75,6 +75,7 @@ void check_skill_level_change(skill_type sk, bool do_level_up = true);
 void change_skill_level(skill_type exsk, int num_level);
 void change_skill_points(skill_type sk, int points, bool do_level_up);
 
+bool is_mundane_skill(skill_type sk);
 bool is_magic_skill(skill_type sk);
 
 void exercise(skill_type exsk, int deg);
@@ -111,6 +112,7 @@ skill_type best_skill(skill_type min_skill, skill_type max_skill,
 void init_skill_order();
 
 bool is_removed_skill(skill_type skill);
+skill_type random_skill();
 bool can_sacrifice_skill(mutation_type mut);
 bool is_useless_skill(skill_type skill);
 bool is_harmful_skill(skill_type skill);
@@ -142,6 +144,9 @@ bool check_training_targets();
 void set_training_status(skill_type sk, training_status st);
 void set_magic_training(training_status st);
 void cleanup_innate_magic_skills();
+
+void init_four_winds();
+void update_four_winds(bool force_recheck = false);
 
 static const skill_type skill_display_order[] =
 {

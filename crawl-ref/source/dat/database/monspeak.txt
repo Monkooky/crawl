@@ -1510,6 +1510,7 @@ Trog player ghost
 @The_monster@ screams in joy, "As in life, so in death: Kill! Kill!! Kill!!!"
 %%%%
 Uskayaw player ghost
+
 @The_monster@ says @to_foe@, "It's your last dance!"
 
 @The_monster@ says @to_foe@, "Let me show you true rhythm."
@@ -1518,6 +1519,8 @@ Uskayaw player ghost
 
 # La Vie Dansante, Jimmy Buffett
 @The_monster@ says, "I used to wander and follow the dancing life. Look where it got me."
+
+@The_monster@ shouts, "Finally, a proper audience!"
 %%%%
 Vehumet player ghost
 
@@ -2319,7 +2322,7 @@ Xom Crazy Yiuf
 @The_monster@ says, "It is extremely absurd to expect to be enlightened by reason, and yet to prescribe to it beforehand on which side it must incline."
 
 # The Principia Discordia
-@The_monster@ says, "The real reality is there, but everything you know about it is in your mind and yours to do with as you like."
+@The_monster@ says, "The real reality is there, but everything you KNOW about 'it' is in your mind and yours to do with as you like."
 
 VISUAL:@The_monster@ considers dialectic materialism.
 
@@ -3672,6 +3675,7 @@ w:50
 
 @The_monster@ says, "I hate explosions."
 
+@The_monster@ says, "You're supposed to blow everything up for a god who barely gives you powers?"
 %%%%
 Ashenzari Donald
 
@@ -7194,21 +7198,9 @@ VISUAL:@The_monster@ looks irritated.
 %%%%
 _Terence_rare_
 
-@The_monster@ screams @at_foe@, "Your {{
-if you.race() == "Armataur" then
-    return "tough hide"
-else
-    return "supposed skill"
-end
-}} won't protect you!" @player_only@
+@The_monster@ screams @at_foe@, "Your supposed skill won't protect you!"
 
-@The_monster@ screams @at_foe@, "Where's your {{
-if you.race() == "Armataur" then
-    return "elephant"
-else
-    return "power"
-end
-}} now?!" @player_only@
+@The_monster@ screams @at_foe@, "Where's your power now?!"
 
 @The_monster@ screams @at_foe@, "Stand, coward! You want a fight, show some honour!"
 
@@ -7228,6 +7220,9 @@ Terence triumphant
 
 # Ayla, Chrono Trigger
 @The_monster@ says, "Win and live. Lose and die. It's the rule of life."
+
+# Realm of Atland; this is especially appropriate if he's wielding Throatcutter
+@The_monster@ says, "Honour does not prevent me from taking a tactical advantage."
 ## END Terence ###
 %%%%
 ##################### A coarse and lanky orc. Urug lost her eye in a fight with a harpy,
@@ -7398,7 +7393,7 @@ _Wiglaf_common_
 
 @The_monster@ says, "Och, ye'r asking fur it now."
 
-VISUAL: @The_monster@ straightens out a crease in @possessive@ hat.
+VISUAL:@The_monster@ straightens out a crease in @possessive@ hat.
 %%%%
 _Wiglaf_rare_
 
@@ -7761,6 +7756,11 @@ default electric golem
 
 SOUND:@The_monster@ crackles and sizzles.
 %%%%
+################## Erythrospite #############################
+erythrospite
+
+VISUAL:@The_monster@ throbs to the beat of your heart.
+%%%%
 ################## Frilled lizard ##############################
 frilled lizard
 
@@ -7869,12 +7869,12 @@ VISUAL:@The_monster@ skips for a moment.
 %%%%
 Killer Klown triumphant
 
-VISUAL: @The_monster@ begins to take a bow, but slips on a banana peel.
+VISUAL:@The_monster@ begins to take a bow, but slips on a banana peel.
 
 @The_monster@ honks, delighted.
 
 # Yes, of course they could tie together a tree or a wisp.
-VISUAL: @The_monster@ begins to tie you into a balloon animal.
+VISUAL:@The_monster@ begins to tie you into a balloon animal.
 ## END Killer Klown ##
 %%%%
 ################## Laughing skull ###########################
@@ -9171,22 +9171,6 @@ w:5
 w:1
 @The_monster@ says, "I wanted to be a wyvern-rider, but @my_God@ had other plans!"
 %%%%
-# Cards not from any Nemelex deck
-_misplaced_card_
-
-the Ace of Spades
-
-the Old Maid
-
-# Tarot
-the Hanged Man
-
-# Tarot via the Simpsons
-the Happy Squirrel
-
-# Uno
-Wild Draw Four
-%%%%
 # Nemelex's old Deck of Oddities; just names, not lines
 _deck_of_oddities_card_
 
@@ -9205,6 +9189,24 @@ the Genie
 the Helix
 
 Xom
+%%%%
+# Cards not from any Nemelex deck
+_misplaced_card_
+
+the Ace of Spades
+
+the Joker
+
+the Old Maid
+
+# Tarot
+the Hanged Man
+
+# Tarot via the Simpsons
+the Happy Squirrel
+
+# Uno
+Wild Draw Four
 %%%%
 # Nemelex's deck of destruction
 _deck_of_destruction_line_

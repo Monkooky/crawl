@@ -59,14 +59,12 @@ function st_box_setup(e)
   e.kmons("Z = frost giant / fire giant / titan w:5 / ettin / shadow dragon /\
                golden dragon w:5 / storm dragon / quicksilver dragon w:2 /\
                iron dragon w:2 / swamp dragon / fire dragon / ice dragon /\
-               catoblepas / moth of wrath w:1 / ghost moth /\
-               glass eye / eye of devastation / glowing orange brain /\
-               nagaraja / guardian serpent /\
-               vampire knight / vampire mage / deep elf sorcerer /\
+               catoblepas / crystal guardian / eye of devastation / \
+               glowing orange brain / nagaraja / guardian serpent /\
+               vampire knight / vampire mage / lich / deep elf sorcerer /\
                deep elf death mage / deep elf demonologist /\
                deep elf annihilator / deep elf high priest / orc warlord /\
-               base draconian w:15 / guardian sphinx / shapeshifter /\
-               glowing shapeshifter")
+               base draconian w:15 / guardian sphinx / glowing shapeshifter")
   e.subst("0 = 0:9 Z:1")
   e.subst("9 = 9:3 Z:1")
 end
@@ -2203,9 +2201,7 @@ SUBST:   T : T F:1
 COLOUR:  _2 = yellow
 FTILE:   _A2 = floor_limestone
 FTILE:   .!13+TFG = floor_metal_gold
-MARKER:  F = lua:fog_machine { cloud_type = "blessed fire", \
-                pow_min = 10, pow_max = 10, delay = 10, \
-                size = 1, walk_dist = 0, start_clouds = 1, excl_rad = 0 }
+: single_cloud(_G, "F", "blessed fire", false)
 : init_protected_by_tso(_G)
 MAP
      xxxxx
@@ -2439,9 +2435,7 @@ KMONS:  B = bush
 SUBST:  * = **%
 NSUBST: 1 = 1:1 / 1:1. / 1:2 / 1:2. / *:., 3 = 2:3 / 3 = 3. / .
 TILE:   G = dngn_statue_elephant
-MARKER: F = lua:fog_machine { cloud_type = "flame", pow_min = 100, \
-                              pow_max = 100, delay = 10, size = 1, \
-                              walk_dist = 0, excl_rad = 0 }
+: single_cloud(_G, "F", "flame", true)
 : vault_metal_statue_setup(_G, "g", "mystic cage")
 : vaults_hard_standard(_G, true)
 FTILE:  B = floor_sprouting_stone

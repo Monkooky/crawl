@@ -122,10 +122,10 @@ end
 -- should guarantee that `D` is present.
 function serpent_of_hell_setup(e)
   local b = soh_hangout()
-  if not you.uniques("the Serpent of Hell")
+  if not you.uniques("Serpent of Hell")
         and you.in_branch(b)
         and you.depth() == dgn.br_depth(b) then
-    e.kmons('D = the Serpent of Hell')
+    e.kmons('D = Serpent of Hell')
   end
 end
 
@@ -204,7 +204,31 @@ function master_elementalist_setup(e, sprintscale)
            "fire_storm.11.wizard;" ..
            "ozocubu's_refrigeration.11.wizard;" ..
            "haste.11.wizard;" ..
-           "repel_missiles.11.wizard" .. equip_def .. " . ring of willpower"
+           "deflect_missiles.11.wizard" .. equip_def .. " . ring of willpower"
+end
+
+-- A function to reduce all the scythe definition boilerplate.
+function scythe(ego)
+  local s = "halberd itemname:scythe tile:wpn_scythe wtile:scythe"
+  if ego ~= nil then
+    s = s .. " ego:" .. ego
+  end
+  return s
+end
+
+-- A handy boilerplate-reducing function for getting a cloud generator to place
+-- just a single cloud in-place. @fade makes it rarely briefly fade away.
+function single_cloud(e, glyph, cloud, fade)
+  local pow = ""
+  if fade == nil then fade = false end
+  if fade then
+    pow = "pow_min = 5, pow_max = 7, delay_min = 55, delay_max = 75, excl_rad = 0"
+  else
+    pow = "pow_min = 90, pow_max = 100, delay = 10, excl_rad = -1"
+  end
+  e.marker(glyph .. ' = lua:fog_machine { cloud_type = "' .. cloud .. '", ' ..
+          "size = 1, " .. pow .. ", walk_dist = 0, " ..
+          "start_clouds = 1, spread_rate = 0 }")
 end
 
 -- A function to crunch down decorative skeletons.
@@ -216,10 +240,9 @@ function vault_species_skeletons(e, category)
 -- post-rotting. Orcs are included to cover Beogh's popularity in the Dungeon.
 -- Coglins have their exoskeletons stolen. Species that only show up
 -- in extended are counted as the rarest type.
-  local s1 = {"goblin", "gnoll", "elf", "kobold", "troll", "orc"}
+  local s1 = {"goblin", "gnoll", "elf", "kobold", "troll", "orc", "centaur"}
   local s2 = {"draconian", "naga", "merfolk", "minotaur", "spriggan", "tengu"}
-  local s3 = {"armataur", "barachi", "demigod", "dwarf",
-              "demonspawn", "felid", "oni"}
+  local s3 = {"barachi", "demigod", "dwarf", "demonspawn", "felid", "oni"}
   local output = "human skeleton"
   if category == "early" or category == "dungeon" or category == "all" then
     output = output .. " / " .. table.concat(s1, " skeleton / ")
@@ -299,8 +322,11 @@ function decorative_floor (e, glyph, type)
                               "dngn_dark_flower_pot_broken"},
     ["orcish standard"] = {"lightcyan", "dngn_ensign_beogh"},
     ["infernal standard"] = {"red", "dngn_ensign_gehenna"},
+    ["caliginous standard"] = {"magenta", "dngn_ensign_dark"},
     ["fur brush"] = {"brown", "dngn_yak_fur"},
     ["set of bottled spirits"] = {"lightgreen", "dngn_bottled_spirits"},
+    ["djembe set"] = {"brown", "dngn_djembe"},
+    ["skull pike"] = {"lightgrey", "dngn_skull_pike"},
     ["mop and bucket"] = {"lightblue", "dngn_mop"},
     ["bloodied mop and bucket"] = {"lightred", "dngn_mop_bloody"},
     ["weapon-inlaid floor"] = {"lightgrey", "floor_blade"}

@@ -65,6 +65,7 @@ end
 #
 NAME:   zot_entry_small
 TAGS:   zot_entry
+WEIGHT: 0
 KFEAT:  X = x
 COLOUR: X = lightmagenta
 COLOUR: .+ = magenta
@@ -2599,15 +2600,18 @@ NAME:   lemuel_acid_trip
 DEPTH:  Zot, !Zot:$
 ORIENT: centre
 MONS:   oklob plant, acid blob, jelly, yellow draconian
-MONS:   any nonbase yellow draconian, orb of entropy
+MONS:   any nonbase yellow draconian, slymdra band, orb of entropy
 KFEAT:  ^ = devourer's trap
 SUBST:  1 = 1:2 .
 SUBST:  . = .:20 3:3 2:1
 SUBST:  } = }:80 >, ) = ):80 >, ] = ]:80 >
-# If orbs of entropy are available, have a chance to place one and also
-# reduce the total monster count to somewhat balance this out.
-: if dgn.zot_orb_type() == "orb of entropy" and crawl.coinflip() then
+# Have a small chance to place a top-tier acid threat, using either the Zot
+# orb or slymdra depending on which is available.
+: if crawl.x_chance_in_y(2, 5) then
 NSUBST: 2 = 1:6 / 2:. / *:2, 4 = 2:. / *:4, 5 = 1:. / *:5
+: end
+: if dgn.zot_orb_type() == "orb of entropy" then
+SUBST:  6 = 7
 : end
 FTILE:  .12345})]>^+ = floor_zot_diamonds
 MAP
@@ -2907,8 +2911,7 @@ SUBST:   d = tGmcc, y = c`, c = cccccbbvvx, l = wl
 NSUBST:  > = 1 = }:80 > / 1 = ):80 > / 1 = ]:80 > / >, 9 = 0 / 9
 NSUBST:  ^ = ' / ^, ~ = " / ~, ` = 2=f / .
 SHUFFLE: 12 / 34 / 56 / 78 / &!, 56, 78, ^' / ~"
-MARKER:  f = lua:fog_machine { cloud_type = "seething chaos", pow_max = 17, \
-             delay_min = 450, delay_max = 700, size = 1, excl_rad = 0 }
+: single_cloud(_G, "f", "seething chaos", true)
 FTILE:   f = floor_pebble_lightmagenta
 MAP
         ccccccc
@@ -4552,7 +4555,7 @@ DEPTH:  Zot, !Zot:$
 WEIGHT: 3
 KMONS:  1 = killer klown
 KMONS:  2 = protean progenitor w:14 / juggernaut / draconian monk /\
-            draconian knight / executioner w:6
+            draconian knight / death cob / executioner w:6
 # XXX: Very awkward to see the rewards without knowledge of ctrl-x.
 KITEM:  1 = | no_pickup / any weapon ego:chaos good_item no_pickup w:5
 KITEM:  2 = orb no_pickup / orb randart no_pickup w:5
@@ -4595,10 +4598,10 @@ ENDMAP
 ##############################################################################
 
 NAME:    hall_of_Zot
-TAGS:    no_dump no_trap_gen
+TAGS:    no_dump no_trap_gen patrolling
 PLACE:   Zot:$
 ORIENT:  north
-MONS:    patrolling orb guardian, boundless tesseract
+MONS:    orb guardian, boundless tesseract
 MONS:    electric golem, killer klown, ancient lich / dread lich
 MONS:    orb of appropriateness
 KITEM:   R = prismatic gem

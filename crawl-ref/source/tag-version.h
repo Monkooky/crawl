@@ -338,6 +338,11 @@ enum tag_minor_version
     TAG_MINOR_FIX_BLOOD_KNOWLEDGE, // Add blood rotation to map knowledge so out of sight changes aren't leaked
     TAG_MINOR_BRANCH_UNIQ_MAPS,    // buniq_* tags for "only once per branch" vault groups
     TAG_MINOR_TRACK_ORIGIN_LEVEL,  // Track the original level on which a monster was generated
+    TAG_MINOR_FIX_POLAR_VORTEX_INFO_LEAK, // Don't leak whether the polar vortex caster has moved or gone
+    TAG_MINOR_CONSTRICTED_TYPE,    // Refactor saving of constriction type on actors
+    TAG_MINOR_LUA_5_4,             // Upgrade from Lua 5.1 to Lua 5.4.
+    TAG_MINOR_PIETY_LOGGING,       // Log piety events
+    TAG_MINOR_MONINFO_CLEANUP,     // Stop marshalling some unused info and start marshalling some overlooked info
 #endif
     NUM_TAG_MINORS,
     TAG_MINOR_VERSION = NUM_TAG_MINORS - 1

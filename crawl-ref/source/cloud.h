@@ -17,7 +17,8 @@ struct cloud_struct
     int           excl_rad;
 
     cloud_struct() : pos(), type(CLOUD_NONE), decay(0), spread_rate(0),
-                     whose(KC_OTHER), killer(KILL_NONE), excl_rad(-1)
+                     whose(KC_OTHER), killer(KILL_NONE), source(MID_NOBODY),
+                     excl_rad(-1)
     {
     }
     cloud_struct(coord_def p, cloud_type c, int d, int spread, kill_category kc,
@@ -105,3 +106,5 @@ void end_still_winds();
 void surround_actor_with_cloud(const actor* a, cloud_type cloud);
 
 bool chaos_affects_actor(actor* victim, actor* source);
+
+bool get_vortex_phase(const coord_def& loc);

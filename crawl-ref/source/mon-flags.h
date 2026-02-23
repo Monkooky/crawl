@@ -158,7 +158,8 @@ enum monclass_flag_type : uint64_t
     /// Is a priest regardless of whether they have priest spells
     M_PRIEST            = BIT(48),
 
-                        //BIT(49), // was M_HYBRID
+    /// Monster name always starts with "the ". Only works on uniques.
+    M_NAME_THE          = BIT(49),
 
                         //BIT(50),
 
@@ -317,9 +318,15 @@ enum monster_flag_type : uint64_t
     /// Is a priest regardless of whether they have priest spells
     MF_PRIEST             = BIT(44),
 
+    /// Was created by a Boundless Tesseract
+    MF_TESSERACT_SPAWN    = BIT(45),
+
 };
 DEF_BITFIELD(monster_flags_t, monster_flag_type);
 
 constexpr monster_flags_t MF_NAME_MASK = MF_NAME_REPLACE;
 constexpr monster_flags_t MF_MELEE_MASK = MF_FIGHTER | MF_TWO_WEAPONS
                                         | MF_ARCHER;
+constexpr monster_flags_t MF_ALL_NAMES = MF_NAME_MASK | MF_NAME_DESCRIPTOR
+                                       | MF_NAME_DEFINITE | MF_NAME_SPECIES
+                                       | MF_NAME_ZOMBIE | MF_NAME_NOCORPSE;

@@ -48,7 +48,6 @@
 #include <stdarg.h>
 #include <windows.h>
 #undef max
-#undef S_NORMAL
 
 // END -- WINDOWS INCLUDES
 
@@ -65,6 +64,7 @@
 #include "options.h"
 #include "state.h"
 #include "unicode.h"
+#include "unwind.h"
 #include "version.h"
 #include "viewgeom.h"
 #include "view.h"
@@ -489,8 +489,10 @@ void set_cursor_enabled(bool curstype)
 
 void clear_to_end_of_line()
 {
-    // We shouldn't move cursor pos
-    save_cursor_pos save;
+    // We shouldn't move cursor pos. We can't use save_cursor_pos because that
+    // requires a valid cursor position to start with.
+    unwind_var<int> save_cursor_x(cx);
+    unwind_var<int> save_cursor_y(cy);
 
     const int pos = wherex();
     const int cols = get_number_of_cols();

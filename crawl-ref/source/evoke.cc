@@ -244,7 +244,6 @@ void zap_wand(int slot, dist *_target)
 
     practise_evoking(1);
     count_action(CACT_EVOKE, wand.sub_type, OBJ_WANDS);
-    alert_nearby_monsters();
 
     you.turn_is_over = true;
 }
@@ -675,7 +674,7 @@ static spret _phantom_mirror(dist *target)
     //      than their base type.
     if (!you_can_see_habitable_spot_near(victim->pos(), habitat, 1))
     {
-        mpr("There is no available space!");
+        canned_msg(MSG_NO_AVAILABLE_SPACE);
         return spret::abort;
     }
     if (stop_summoning_prompt(mi.mresists, mf))
@@ -696,9 +695,8 @@ static spret _phantom_mirror(dist *target)
     mon->summoner = MID_PLAYER;
     mons_add_blame(mon, "mirrored by the player character");
     mon->add_ench(ENCH_PHANTOM_MIRROR);
-    mon->add_ench(mon_enchant(ENCH_DRAINED,
-                              div_rand_round(mon->get_experience_level(), 3),
-                              &you, INFINITE_DURATION));
+    mon->add_ench(mon_enchant(ENCH_DRAINED, &you, INFINITE_DURATION,
+                              div_rand_round(mon->get_experience_level(), 3)));
 
     mon->behaviour = BEH_SEEK;
     set_nearest_monster_foe(mon);
@@ -715,8 +713,7 @@ static spret _phantom_mirror(dist *target)
 
 static bool _valid_tremorstone_target(const monster &m)
 {
-    return !m.is_firewood()
-        && !never_harm_monster(&you, m);
+    return !m.is_firewood();
 }
 
 /**
@@ -1058,7 +1055,7 @@ string cannot_evoke_item_reason(const item_def *item, bool temp, bool ident)
     if (temp
         && item->base_type == OBJ_MISCELLANY
         && item->sub_type == MISC_HORN_OF_GERYON
-        && silenced(you.pos()))
+        && you.is_silenced())
     {
         return "You can't produce a sound!";
     }
@@ -1102,11 +1099,14 @@ bool evoke_item(item_def& item, dist *preselect)
         return true;
 
     case OBJ_BAUBLES:
+        if (!check_transform_into(transformation::flux, false))
+            return false;
+
         mprf("You crush the flux bauble in your %s and feel its energy "
             "flooding your body.", you.hand_name(false).c_str());
         ASSERT(in_inventory(item));
         dec_inv_item_quantity(item.link, 1);
-        transform(0, transformation::flux);
+        transform(0, transformation::flux, true);
         you.props[FLUX_ENERGY_KEY] = 45;
         return true;
 
@@ -1403,15 +1403,16 @@ int stardust_orb_max(bool max)
 
 int stardust_orb_power(int mp_spent, bool max_evo)
 {
-    const int skill = max_evo ? 108 : you.skill(SK_EVOCATIONS, 4);
-    int pow = (skill + 15) * (100 + (mp_spent * 25)) / 100;
+    const int skill = max_evo ? 81 : you.skill(SK_EVOCATIONS, 3);
+    int pow = (skill + 10) * (100 + (mp_spent * 25)) / 100;
     return pow;
 }
 
 void stardust_orb_trigger(int mp_spent)
 {
     if (!you.duration[DUR_STARDUST_COOLDOWN]
-        && you.wearing_ego(OBJ_ARMOUR, SPARM_STARDUST))
+        && you.wearing_ego(OBJ_ARMOUR, SPARM_STARDUST)
+        && !you.has_mutation(MUT_HP_CASTING))
     {
         schedule_stardust_fineff(&you, stardust_orb_power(mp_spent),
                                  stardust_orb_max());

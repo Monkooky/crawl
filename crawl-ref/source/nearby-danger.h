@@ -16,7 +16,8 @@ using std::vector;
 
 extern const struct coord_def Compass[9];
 
-bool mons_can_hurt_player(const monster* mon);
+bool mons_is_irrelevant(const monster* mon);
+bool mons_is_always_safe(const monster *mon);
 bool mons_is_safe(const monster* mon, const bool want_move = false,
                   const bool consider_user_options = true,
                   const bool check_dist = true);
@@ -31,7 +32,7 @@ vector<monster* > get_nearby_monsters(bool want_move = false,
 
 bool i_feel_safe(bool announce = false, bool want_move = false,
                  bool just_monsters = false, bool check_dist = true,
-                 int range = -1);
+                 int range = -1, string* reason = nullptr);
 
 bool can_rest_here(bool announce = false);
 

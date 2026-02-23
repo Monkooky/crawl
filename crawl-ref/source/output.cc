@@ -738,7 +738,8 @@ static void _print_stats_equip(int x, int y)
                 {
                     const item_def& item = entries[i].get_item();
                     cglyph_t g = get_item_glyph(item);
-                    g.col = element_colour(g.col, !Options.animate_equip_bar);
+                    g.col = element_colour(g.col, you.pos(),
+                                           !Options.animate_equip_bar);
                     formatted_string::parse_string(glyph_to_tagstr(g)).display();
                 }
             }
@@ -1063,7 +1064,7 @@ static void _print_stats_contam(int x, int y)
     // Hide the bar entirely if the player has no contam
     if (you.magic_contamination == 0 && !Options.always_show_doom_contam)
     {
-        CPRINTF("          ");
+        CPRINTF("            ");
         return;
     }
 
@@ -1873,9 +1874,9 @@ static void _print_next_monster_desc(const vector<monster_info>& mons,
 
             monster_info mi = mons[start];
 #ifdef TARGET_OS_WINDOWS
-            textcolour(real_colour(dam_colour(mi) | COLFLAG_ITEM_HEAP));
+            textcolour(real_colour(dam_colour(mi) | COLFLAG_ITEM_HEAP, mi.pos));
 #else
-            textcolour(real_colour(dam_colour(mi) | COLFLAG_REVERSE));
+            textcolour(real_colour(dam_colour(mi) | COLFLAG_REVERSE, mi.pos));
 #endif
             CPRINTF(" ");
             textbackground(BLACK);
@@ -2598,9 +2599,12 @@ static vector<formatted_string> _get_overview_resistances(
 
     out += _stealth_bar(cwidth, 20) + "\n";
 
-    const int regen = player_regen(); // round up
+    const int regen = player_regen() + (player_indomitable_regen_rate() * 10); // round up
     out += chop_string("HPRegen", cwidth);
-    out += make_stringf("%d.%02d/turn\n", regen/100, regen%100);
+    out += make_stringf("%s%d.%02d%s/turn\n",
+                            you.duration[DUR_INDOMITABLE] ? "<lightblue>" : "",
+                            regen/100, regen%100,
+                            you.duration[DUR_INDOMITABLE] ? "</lightblue>" : "");
 
     if (!you.has_mutation(MUT_HP_CASTING))
     {
@@ -2702,6 +2706,24 @@ string dump_overview_screen()
     return text;
 }
 
+static string _rampage_passive_string()
+{
+    string desc = "";
+    const int rampage = you.rampaging();
+    if (rampage)
+    {
+        desc += you.has_mutation(MUT_STAMPEDE) ? "stampede" : "rampage";
+
+        const bool infinite = you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS);
+        const char *inf = Options.char_set == CSET_ASCII ? "+inf"
+                                                         : "+\u221e"; //"∞"
+
+        desc += infinite    ? inf :
+                rampage > 1 ? make_stringf("+%d", rampage) : "";
+    }
+    return desc;
+}
+
 static string _extra_passive_effects()
 {
     vector<string> passives;
@@ -2775,15 +2797,7 @@ static string _extra_passive_effects()
         passives.emplace_back("guardian spirit");
 
     if (you.rampaging())
-    {
-        const bool infinite = you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS);
-        const char *inf = Options.char_set == CSET_ASCII ? "+inf"
-                                                          : "+\u221e"; //"∞"
-        passives.emplace_back(
-            make_stringf("%s%s",
-                         you.has_mutation(MUT_ROLLPAGE) ? "roll" : "rampage",
-                         infinite ? inf : "").c_str());
-    }
+        passives.emplace_back(_rampage_passive_string().c_str());
 
     if (you.faith())
         passives.emplace_back("faith");

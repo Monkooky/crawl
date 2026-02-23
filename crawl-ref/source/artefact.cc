@@ -321,8 +321,8 @@ void set_unique_item_status(const item_def& item,
  * @param arm           The armour_type of the armour in question.
  * @param proprt[out]   The properties list to be populated.
  */
-static void _populate_armour_intrinsic_artps(const armour_type arm,
-                                             artefact_properties_t &proprt)
+void populate_armour_intrinsic_artps(const armour_type arm,
+                                     artefact_properties_t &proprt)
 {
     proprt[ARTP_FIRE] += armour_type_prop(arm, ARMF_RES_FIRE);
     proprt[ARTP_COLD] += armour_type_prop(arm, ARMF_RES_COLD);
@@ -448,16 +448,17 @@ static map<talisman_type, vector<intrinsic_artp>> talisman_artps = {
     { TALISMAN_SCARAB,      {{ARTP_FIRE, 2}}},
     { TALISMAN_MEDUSA,      {{ARTP_POISON, 1}}},
     { TALISMAN_SERPENT,     {{ARTP_POISON, 1}}},
+    { TALISMAN_EEL,         {{ARTP_ELECTRICITY, 1}}},
     { TALISMAN_SPIDER,      {{ARTP_RAMPAGING, 1}}},
     { TALISMAN_FORTRESS,    {{ARTP_RCORR, 1}}},
     { TALISMAN_STATUE,  {{ARTP_POISON, 1}, {ARTP_ELECTRICITY, 1},
                          {ARTP_NEGATIVE_ENERGY, 1}}},
     { TALISMAN_DRAGON,  {{ARTP_FIRE, 1}, {ARTP_COLD, 1}, {ARTP_POISON, 1}, {ARTP_FLY, 1}}},
-    { TALISMAN_SPHINX,  {{ARTP_FLY, 1}}},
+    { TALISMAN_SPHINX,  {{ARTP_FLY, 1}, {ARTP_SEE_INVISIBLE, 1}}},
     { TALISMAN_STORM,   {{ARTP_POISON, 1}, {ARTP_ELECTRICITY, 1}, {ARTP_FLY, 1}}},
     { TALISMAN_DEATH,   {{ARTP_POISON, 1}, {ARTP_NEGATIVE_ENERGY, 3},
                         {ARTP_COLD, 1}}},
-    { TALISMAN_VAMPIRE, {{ARTP_COLD, 1}, {ARTP_NEGATIVE_ENERGY, 1}}},
+    { TALISMAN_VAMPIRE, {{ARTP_COLD, 1}, {ARTP_NEGATIVE_ENERGY, 1}, {ARTP_SEE_INVISIBLE, 1}}},
 };
 
 /**
@@ -495,8 +496,8 @@ static void _populate_item_intrinsic_artps(const item_def &item,
     switch (item.base_type)
     {
         case OBJ_ARMOUR:
-            _populate_armour_intrinsic_artps((armour_type)item.sub_type,
-                                             props);
+            populate_armour_intrinsic_artps((armour_type)item.sub_type,
+                                            props);
             break;
         case OBJ_STAVES:
             _populate_staff_intrinsic_artps((stave_type)item.sub_type, props);
@@ -577,6 +578,7 @@ static void _add_randart_weapon_brand(const item_def &item,
         item_props[ARTP_BRAND] = random_choose_weighted(
             47, SPWPN_FLAMING,
             47, SPWPN_FREEZING,
+            35, NUM_SPECIAL_WEAPONS,
             26, SPWPN_HEAVY,
             26, SPWPN_VENOM,
             26, SPWPN_DRAINING,
@@ -591,6 +593,9 @@ static void _add_randart_weapon_brand(const item_def &item,
              6, SPWPN_REAPING,
              3, SPWPN_DISTORTION,
              3, SPWPN_CHAOS);
+
+        if (item_props[ARTP_BRAND] == NUM_SPECIAL_WEAPONS)
+            item_props[ARTP_BRAND] = get_special_brand_for(static_cast<weapon_type>(item.sub_type));
     }
 
     // no brand = magic flag to reject and retry
@@ -760,10 +765,12 @@ static bool _artp_can_go_on_item(artefact_prop_type prop, int prop_val,
             return extant_props[ARTP_BRAND] != SPWPN_ANTIMAGIC;
         case ARTP_BLINK:
             return !_any_artps_in_item_props({ ARTP_PREVENT_TELEPORTATION },
-                                             intrinsic_props, extant_props);
+                                             intrinsic_props, extant_props)
+                    && !item.is_type(OBJ_TALISMANS, TALISMAN_SPIDER);
         case ARTP_PREVENT_TELEPORTATION:
             return !_any_artps_in_item_props({ ARTP_BLINK },
                                                 intrinsic_props, extant_props)
+                   && !item.is_type(OBJ_TALISMANS, TALISMAN_SPIDER)
                    && !item.is_type(OBJ_TALISMANS, TALISMAN_STORM);
         // only on melee weapons
         case ARTP_ANGRY:

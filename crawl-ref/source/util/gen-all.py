@@ -103,7 +103,7 @@ def gen_all(perl):
     #
     generated_files = ['art-data.h', 'art-enum.h', 'rltiles/dc-unrand.txt',
         'rltiles/tiledef-unrand.cc']
-    input_files = ['util/art-data.pl', 'art-data.txt', 'art-func.h', 'rltiles/dc-player.txt']
+    input_files = ['util/art-data.pl', 'art-data.txt', 'art-func.h']
     command = [perl, input_files[0]]
     run_if_needed(generated_files, input_files, command)
 
@@ -192,6 +192,14 @@ def build_rtiles():
     for tile_type in inputs:
         copy_if_needed('rltiles/' + tile_type + '.png',
                        'dat/tiles/' + tile_type + '.png')
+
+    python = sys.executable
+
+    generated_files = ['rltiles/status-icon-sizes.h',
+                       'rltiles/status-icon-sizes.js']
+    input_files = ['util/status-icon-sizes-gen.py', 'rltiles/icon-sizes.txt']
+    command = [python] + input_files
+    run_if_needed(generated_files, input_files, command)
 
 def main():
     perl = shutil.which('perl')

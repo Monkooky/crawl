@@ -77,6 +77,7 @@ void remove_bound_soul_companion()
             mons = &entry.second.mons.mons;
         if (mons->type == MONS_BOUND_SOUL)
         {
+            mprf("%s is freed.", mons->name(DESC_THE, true).c_str());
             remove_companion(mons);
             return;
         }
@@ -155,8 +156,7 @@ bool recall_offlevel_ally(mid_t mid)
     simple_monster_message(*mons, " is recalled.");
 
     // Now that the monster is onlevel, we can safely apply traps to it.
-    // old location isn't very meaningful, so use current loc
-    mons->apply_location_effects(mons->pos());
+    mons->trigger_movement_effects(MV_TRANSLOCATION);
     // check if it was killed/shafted by a trap...
     if (!mons->alive())
         return true; // still successfully recalled!
@@ -167,19 +167,9 @@ bool recall_offlevel_ally(mid_t mid)
     {
         msg::suppress msg;
 
-        int turns = you.elapsed_time - comp->timestamp;
-        // Note: these are auts, not turns, thus healing is 10 times as fast as
-        // for other monsters, confusion goes away after a single turn, etc.
-
-        mons->heal(div_rand_round(turns * mons->off_level_regen_rate(), 100));
-
-        if (turns >= 10 && mons->alive())
-        {
-            // Remove confusion manually (so that the monster
-            // doesn't blink after being recalled)
-            mons->del_ench(ENCH_CONFUSION, true);
-            mons->timeout_enchantments(turns / 10);
-        }
+        int time = you.elapsed_time - comp->timestamp;
+        mons->heal(div_rand_round(time * mons->off_level_regen_rate(), 1000));
+        mons->timeout_enchantments(time);
     }
     recall_orders(mons);
 
@@ -487,7 +477,7 @@ static bool _try_generate_apostle_challenge(int pow, int band_pow)
     if (!apostle)
         return false;
 
-    apostle->add_ench(mon_enchant(ENCH_TOUCH_OF_BEOGH, 0, nullptr, INFINITE_DURATION));
+    apostle->add_ench(mon_enchant(ENCH_TOUCH_OF_BEOGH, nullptr, INFINITE_DURATION));
     apostle->flags |= (MF_APOSTLE_BAND | MF_HARD_RESET);
     apostle->props[ALWAYS_CORPSE_KEY] = true;
 
@@ -627,11 +617,15 @@ void win_apostle_challenge(monster& apostle)
     }
 
     apostle.hit_points = apostle.max_hit_points;
-    apostle.timeout_enchantments(1000);
+    apostle.timeout_enchantments();
     apostle.attitude = ATT_GOOD_NEUTRAL;
     mons_att_changed(&apostle);
     apostle.stop_constricting_all();
     apostle.stop_being_constricted();
+
+    // If they were given these by banes, don't allow them to persist indefinitely.
+    apostle.del_ench(ENCH_WARDING);
+    apostle.del_ench(ENCH_PARADOX_TOUCHED);
 
     // Don't let the player get XP from killing off apostles with e.g. ?poison
     apostle.flags |= MF_NO_REWARD;
@@ -727,7 +721,7 @@ void beogh_recruit_apostle()
 
     // Now actually convert and save the apostle
     real->hit_points = real->max_hit_points;
-    real->timeout_enchantments(1000);
+    real->timeout_enchantments();
     real->flags &= ~MF_APOSTLE_BAND;
     real->attitude = ATT_FRIENDLY;
     mons_make_god_gift(*real, GOD_BEOGH);
@@ -922,7 +916,7 @@ void beogh_swear_vengeance(const monster& apostle)
             && !mon->has_ench(ENCH_VENGEANCE_TARGET))
         {
             you.duration[DUR_BEOGH_SEEKING_VENGEANCE] += 1;
-            mon->add_ench(mon_enchant(ENCH_VENGEANCE_TARGET, vengeance_num, &you, INFINITE_DURATION));
+            mon->add_ench(mon_enchant(ENCH_VENGEANCE_TARGET, &you, INFINITE_DURATION, vengeance_num));
             mon->patrol_point = apostle.pos();
             new_targets = true;
         }

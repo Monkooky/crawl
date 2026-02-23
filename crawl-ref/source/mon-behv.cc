@@ -30,6 +30,7 @@
 #include "mon-speak.h"
 #include "mon-tentacle.h"
 #include "ouch.h"
+#include "player-notices.h"
 #include "religion.h"
 #include "shout.h"
 #include "spl-summoning.h"
@@ -37,7 +38,9 @@
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
+#include "transform.h"
 #include "traps.h"
+#include "view.h"
 
 static void _guess_invis_foe_pos(monster* mon)
 {
@@ -60,35 +63,35 @@ static void _guess_invis_foe_pos(monster* mon)
         mon->target = dgn_random_point_from(mon->pos(), guess_radius);
 }
 
-static void _mon_check_foe_invalid(monster* mon)
+static bool _is_valid_foe(monster* mon, unsigned short foe)
 {
     // Assume a spectral weapon has a valid target
     // Ideally this is not outside special cased like this
     if (mons_is_avatar(mon->type))
-        return;
+        return true;
 
-    if (mon->foe != MHITNOT && mon->foe != MHITYOU)
-    {
-        if (actor *foe = mon->get_foe())
-        {
-            const monster* foe_mons = foe->as_monster();
-            if (foe_mons->alive() && monster_los_is_valid(mon, foe)
-                && (mon->has_ench(ENCH_FRENZIED)
-                    || mon->friendly() != foe_mons->friendly()
-                    || mon->neutral() != foe_mons->neutral()))
-            {
-                return;
-            }
-        }
+    if (foe == MHITNOT || foe == MHITYOU)
+        return true;
 
+    if (foe < 0 || foe >= MAX_MONSTERS)
+        return false;
+
+    const monster* foe_mons = &env.mons[foe];
+    return foe_mons->alive()
+            && monster_los_is_valid(mon, foe_mons)
+            && (mon->has_ench(ENCH_FRENZIED) || !mons_aligned(mon, foe_mons));
+}
+
+static void _mon_check_foe_invalid(monster* mon)
+{
+    if (!_is_valid_foe(mon, mon->foe))
         mon->foe = MHITNOT;
-    }
 }
 
 static bool _mon_tries_regain_los(monster* mon)
 {
     // Only intelligent monsters with ranged attack will try to regain LOS.
-    if (mons_intel(*mon) < I_HUMAN || !mons_has_ranged_attack(*mon))
+    if (mons_intel(*mon) < I_HUMAN || mon->threat_range() <= 1)
         return false;
 
     // Any special case should go here.
@@ -100,7 +103,7 @@ static bool _mon_tries_regain_los(monster* mon)
     }
 
     // Randomize it to make it less predictable, and reduce flip-flopping.
-    return !one_chance_in(3);
+    return !one_chance_in(6);
 }
 
 // Monster tries to get into a firing position. Among the cells which have
@@ -109,7 +112,7 @@ static bool _mon_tries_regain_los(monster* mon)
 // to ideal_range (too far = easier to escape, too close = easier to ambush).
 static void _set_firing_pos(monster* mon, coord_def target)
 {
-    const int ideal_range = LOS_DEFAULT_RANGE / 2;
+    const int ideal_range = min(LOS_DEFAULT_RANGE / 2, mon->threat_range());
     const int current_distance = mon->pos().distance_from(target);
 
     // We don't consider getting farther away unless already very close.
@@ -181,7 +184,13 @@ static void _decide_monster_firing_position(monster* mon, actor* owner)
             // (or wasn't even attempted) and we need to set our target
             // the traditional way.
 
-            mon->target = you.pos();
+            // During monster catchup, monsters should track the player's *last* position.
+            mon->target = you.doing_monster_catchup ? env.old_player_pos : you.pos();
+
+            // And then, if they've actually reached it, should semi-randomly
+            // fan out to an appropriate range around it.
+            if (you.doing_monster_catchup && mon->target == env.old_player_pos)
+                _set_firing_pos(mon, env.old_player_pos);
         }
     }
     else
@@ -262,9 +271,11 @@ void handle_behaviour(monster* mon)
     bool isNeutral  = mon->neutral();
     bool wontAttack = mon->wont_attack() && !mon->has_ench(ENCH_FRENZIED);
 
-    // Whether the player position is in LOS of the monster.
-    bool proxPlayer = !crawl_state.game_is_arena() && mon->see_cell(you.pos())
-                      && in_bounds(you.pos());
+    // Whether the player position is in LOS of the monster
+    // (or we're pretending that it is for purposes of off-level catchup).
+    bool proxPlayer = !crawl_state.game_is_arena()
+                      && ((mon->see_cell(you.pos()) && in_bounds(you.pos())
+                          || (you.doing_monster_catchup && mon->see_cell(env.old_player_pos))));
 
     // If set, pretend the player isn't there, but only for hostile monsters.
     if (proxPlayer && crawl_state.disables[DIS_MON_SIGHT] && !mon->wont_attack())
@@ -349,7 +360,8 @@ void handle_behaviour(monster* mon)
              && !mons_self_destructs(*mon)
              && !mons_is_avatar(mon->type))
     {
-        if (you.pet_target != MHITNOT)
+        // Only instruct allies to attack our pet target if they actually can.
+        if (you.pet_target != MHITNOT && _is_valid_foe(mon, you.pet_target))
             mon->foe = you.pet_target;
         else
             set_nearest_monster_foe(mon, true);
@@ -477,6 +489,10 @@ void handle_behaviour(monster* mon)
         coord_def foepos = coord_def(0,0);
         if (afoe)
             foepos = afoe->pos();
+
+        // While doing monster catchup, pretend the player is at their last-known location.
+        if (afoe == &you && you.doing_monster_catchup)
+            foepos = env.old_player_pos;
 
         if (mon->pos() == mon->firing_pos)
             mon->firing_pos.reset();
@@ -779,11 +795,8 @@ void handle_behaviour(monster* mon)
             // try to attack. The chance is low to prevent the player from
             // dancing in and out of the water.
             try_pathfind(mon);
-            if (one_chance_in(10) && !target_is_unreachable(mon)
-                || mons_can_attack(*mon))
-            {
+            if (one_chance_in(10) && !target_is_unreachable(mon))
                 new_beh = BEH_SEEK;
-            }
             else if (!proxPlayer && one_chance_in(5))
                 new_beh = BEH_WANDER;
             else if (proxPlayer)
@@ -1017,13 +1030,9 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
     if (src_idx == YOU_FAULTLESS)
         src_idx = MHITYOU;
 
+    // Prioritize leaving Sanctuary over other interruptions.
     if (is_sanctuary(mon->pos()) && mons_is_fleeing_sanctuary(*mon))
-    {
-        mon->behaviour = BEH_FLEE;
-        mon->foe       = MHITYOU;
-        mon->target    = env.sanctuary_pos;
         return;
-    }
 
     switch (event)
     {
@@ -1083,16 +1092,20 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
             return;
         }
 
-        // ANON_FRENDLY_MONSTER is mostly used for blame attribution for
-        // friendly monsters that are *dead* by the time of doing damage, so
-        // monsters shouldn't check if they need to run away from it.
-        if (src_idx != ANON_FRIENDLY_MONSTER)
+        // Even when hit, don't make monsters set their foe to 'nothing' or to
+        // an ally (which will cause hostile monsters to automatically set it to
+        // MHITNOT later anyway). If they do so, seeking monsters not currently
+        // in the player's LoS will immediately forget about them.
+        if (src_idx != ANON_FRIENDLY_MONSTER && src_idx != MHITNOT
+            && !(src && mons_aligned(mon, src)))
+        {
             mon->foe = src_idx;
+        }
 
-        // If the monster can't reach its target and can't attack it
-        // either, retreat.
+        // If the monster can't reach its target (even just to get into attack
+        // range), retreat.
         try_pathfind(mon);
-        if (mons_intel(*mon) > I_BRAINLESS && !mons_can_attack(*mon)
+        if (mons_intel(*mon) > I_BRAINLESS
             && target_is_unreachable(mon) && !mons_just_slept(*mon))
         {
             mon->behaviour = BEH_RETREAT;
@@ -1137,8 +1150,18 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
                     behaviour_event(head, event, src, src_pos, allow_shout);
                 }
 
+                const bool was_friend = mons_att_wont_attack(mon->attitude);
                 mon->attitude = ATT_HOSTILE;
                 breakCharm    = true;
+
+                // If we're angered a monster that previously would not have
+                // registered as hostile, let the player encounter them 'again'.
+                // (ie: for the first time).
+                if (was_friend)
+                {
+                    mon->flags &= ~MF_WAS_IN_VIEW;
+                    seen_monster(mon);
+                }
             }
         }
 
@@ -1358,7 +1381,8 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
     if (was_unaware && allow_shout
         && mon->foe == MHITYOU && !mon->wont_attack())
     {
-        monster_consider_shouting(*mon);
+        if (!vampire_mesmerism_check(*mon))
+            monster_consider_shouting(*mon);
     }
 
     const bool isPacified = mon->pacified();
@@ -1379,7 +1403,7 @@ void behaviour_event(monster* mon, mon_event_type event, const actor *src,
         mons_speaks_msg(mon, getSpeakString("orc_priest_preaching"), MSGCH_TALK);
 
     ASSERT(!crawl_state.game_is_arena()
-           || mon->foe != MHITYOU && mon->target != you.pos());
+           || mon->foe != MHITYOU && (mon->target.origin() || mon->target != you.pos()));
 }
 
 void make_mons_stop_fleeing(monster* mon)
@@ -1403,19 +1427,6 @@ beh_type attitude_creation_behavior(mon_attitude_type att)
     }
 }
 
-// If you're invis and throw/zap whatever, alerts env.mons to your position.
-void alert_nearby_monsters()
-{
-    // Judging from the above comment, this function isn't
-    // intended to wake up monsters, so we're only going to
-    // alert monsters that aren't sleeping. For cases where an
-    // event should wake up monsters and alert them, I'd suggest
-    // calling noisy() before calling this function. - bwr
-    for (monster_near_iterator mi(you.pos()); mi; ++mi)
-        if (!mi->asleep())
-             behaviour_event(*mi, ME_ALERT, &you);
-}
-
 //Make all monsters lose track of a given target after a few turns
 void shake_off_monsters(const actor* target)
 {
@@ -1435,7 +1446,7 @@ void shake_off_monsters(const actor* target)
             // out of sight
             dprf("Monster %d forgot about foe %d. (Previous foe_memory: %d)",
                     m->mindex(), target->mindex(), m->foe_memory);
-            m->foe_memory = min(m->foe_memory, 7);
+            m->foe_memory = min(m->foe_memory, 50);
         }
     }
 }

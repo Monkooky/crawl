@@ -260,7 +260,7 @@ bool xom_is_nice(int tension)
         // Whether Xom is nice depends largely on his mood (== piety).
         return x_chance_in_y(effective_piety, MAX_PIETY);
     }
-    else // CARD_XOM
+    else // CARD_XOM (XXX: There is no Xom card anymore. Is this needed?)
         return coinflip();
 }
 
@@ -977,8 +977,8 @@ static int _xom_pal_counting(int roll, bool isFriendly)
             count = random_range(2, 3);
     }
 
-    if (you.runes.count() > 4)
-        count += div_rand_round(you.runes.count(), 5);
+    if (you.runes.count() > ZOT_ENTRY_RUNES + 1)
+        count += div_rand_round(you.runes.count(), ZOT_ENTRY_RUNES + 2);
 
     if (!isFriendly && _xom_feels_nasty())
         count *= 1.5;
@@ -1113,7 +1113,7 @@ static void _confuse_monster(monster* mons, int sever)
         return;
 
     const bool was_confused = mons->confused();
-    if (mons->add_ench(mon_enchant(ENCH_CONFUSION, 0,
+    if (mons->add_ench(mon_enchant(ENCH_CONFUSION,
           &env.mons[ANON_FRIENDLY_MONSTER], random2(sever) * 10)))
     {
         if (was_confused)
@@ -1224,9 +1224,8 @@ static void _xom_send_one_ally(int sever)
     {
         // Add a little extra length and regen. Make friends with your new pal.
         int extra = random_range(100, 200);
-        summons->add_ench(mon_enchant(ENCH_SUMMON_TIMER, MON_SUMM_AID, nullptr, extra));
-        summons->add_ench(mon_enchant(ENCH_REGENERATION, MON_SUMM_AID,
-                                       nullptr, 2000));
+        summons->add_ench(mon_enchant(ENCH_SUMMON_TIMER, nullptr, extra));
+        summons->add_ench(mon_enchant(ENCH_REGENERATION, nullptr, 2000));
         god_speaks(GOD_XOM, _get_xom_speech("single summon").c_str());
 
         if (summons->type == MONS_REAPER)
@@ -1349,31 +1348,6 @@ static void _xom_bad_polymorph(int /*sever*/)
     _xom_polymorph_nearby_monster(false);
 }
 
-bool swap_monsters(monster* m1, monster* m2)
-{
-    monster& mon1(*m1);
-    monster& mon2(*m2);
-
-    const bool mon1_caught = mon1.caught();
-    const bool mon2_caught = mon2.caught();
-
-    mon1.swap_with(m2);
-
-    if (mon1_caught && !mon2_caught)
-    {
-        check_net_will_hold_monster(&mon2);
-        mon1.del_ench(ENCH_HELD, true);
-
-    }
-    else if (mon2_caught && !mon1_caught)
-    {
-        check_net_will_hold_monster(&mon1);
-        mon2.del_ench(ENCH_HELD, true);
-    }
-
-    return true;
-}
-
 /// Which monsters, if any, can Xom currently swap with the player?
 static vector<monster*> _rearrangeable_pieces()
 {
@@ -1404,7 +1378,7 @@ static void _xom_rearrange_pieces(int sever)
 
     // Swap places with a random monster.
     monster* mon = mons[random2(num_mons)];
-    swap_with_monster(mon);
+    transpose_with_monster(mon);
 
     // Sometimes confuse said monster.
     if (coinflip())
@@ -1422,7 +1396,7 @@ static void _xom_rearrange_pieces(int sever)
             while (mon1 == mon2)
                 mon2 = random2(num_mons);
 
-            if (swap_monsters(mons[mon1], mons[mon2]))
+            if (mons[mon1]->swap_with(mons[mon2], MV_TRANSLOCATION))
             {
                 if (!did_message)
                 {
@@ -1545,34 +1519,21 @@ static void _xom_lights_up_webs(int /*sever*/)
 
     for (coord_def pos : candidates)
     {
-        if (env.grid(pos) == DNGN_TRAP_WEB)
-        {
-            flash_tile(pos, RED, 0);
-            animation_delay(20, true);
+        flash_tile(pos, RED, 0);
+        animation_delay(20, true);
 
-            if (cloud_at(pos))
-                delete_cloud(pos);
+        if (cloud_at(pos))
+            delete_cloud(pos);
 
-            place_cloud(CLOUD_FIRE, pos, blaze_time, nullptr, 0);
+        place_cloud(CLOUD_FIRE, pos, blaze_time, nullptr, 0);
 
-            webs_count++;
-            env.map_knowledge(pos).set_feature(DNGN_FLOOR);
-            dungeon_terrain_changed(pos, DNGN_FLOOR);
+        webs_count++;
+        env.map_knowledge(pos).set_feature(DNGN_FLOOR);
+        dungeon_terrain_changed(pos, DNGN_FLOOR);
 
-            if (get_trapping_net(pos, true) == NON_ITEM)
-            {
-                if (monster_at(pos) && monster_at(pos)->has_ench(ENCH_HELD))
-                {
-                    monster_web_cleanup(*monster_at(pos), true);
-                    monster_at(pos)->del_ench(ENCH_HELD);
-                }
-                else if (pos == you.pos() && you.attribute[ATTR_HELD])
-                {
-                    leave_web();
-                    stop_being_held();
-                }
-            }
-        }
+        if (actor* act = actor_at(pos))
+            if (act->caught_by() == CAUGHT_WEB)
+                act->stop_being_caught();
     }
 
     view_clear_overlays();
@@ -2077,6 +2038,7 @@ static void _xom_give_mutations(bool good)
 
     for (int i = num_tries; i > 0; --i)
     {
+        // One bad mutation guaranteed when under Xom wrath.
         if (you.penance[GOD_XOM] && i == num_tries && !good)
         {
             if (!mutate(RANDOM_BAD_MUTATION, "Xom's mischief",
@@ -2085,6 +2047,8 @@ static void _xom_give_mutations(bool good)
                 failMsg = false;
             }
         }
+        // RANDOM_XOM_MUTATION is a flat coinflip for good or bad,
+        // as opposed to RANDOM_MUTATION being 60-40 good or bad.
         else if (!mutate(good ? RANDOM_GOOD_MUTATION : RANDOM_XOM_MUTATION,
                     good ? "Xom's grace" : "Xom's mischief",
                     failMsg, false, true, false, MUTCLASS_NORMAL))
@@ -2136,7 +2100,7 @@ static void _xom_spray_lightning(coord_def position)
     beam.aux_source   = "Xom's lightning strike";
 
     int power = 20 + you.experience_level * 5;
-    if (you.runes.count() > 4)
+    if (you.runes.count() > ZOT_ENTRY_RUNES + 1)
         power += you.runes.count() * 3;
 
     // uncontrolled, so no player tracer.
@@ -2558,13 +2522,13 @@ static void _xom_destruction(int sever, bool real)
             if (!rc)
                 god_speaks(GOD_XOM, _get_xom_speech("fake destruction").c_str());
             rc = true;
-            backlight_monster(*mi, &you);
+            corona_monster(*mi, &you);
             continue;
         }
 
         int dice = 2 + div_rand_round(you.experience_level, 13);
-        if (you.runes.count() > 4)
-            dice += div_rand_round(you.runes.count(), 3);
+        if (you.runes.count() > ZOT_ENTRY_RUNES + 1)
+            dice += div_rand_round(you.runes.count(), ZOT_ENTRY_RUNES);
 
         bolt beam;
 
@@ -2718,7 +2682,7 @@ static void _xom_enchant_monster(int sever, bool helpful)
               (ench == ENCH_PETRIFYING || ench == ENCH_REGENERATION) ? "starts" : "looks",
               ench_name.c_str());
 
-        application->add_ench(mon_enchant(ench, 0, &you, time));
+        application->add_ench(mon_enchant(ench, &you, time));
         affected++;
     }
 
@@ -2743,7 +2707,8 @@ static void _xom_bad_enchant_monster(int sever)
 static vector<monster*> _xom_find_weak_monsters(bool range)
 {
     vector<monster*> targetable;
-    int runes = (you.runes.count() > 3) ? div_rand_round(you.runes.count(), 3) : 0;
+    int runes = (you.runes.count() > ZOT_ENTRY_RUNES) ?
+                    div_rand_round(you.runes.count(), ZOT_ENTRY_RUNES) : 0;
     int maximum_hd = 3 + you.experience_level * 7 / 20 + runes;
 
     for (monster_near_iterator mi(you.pos(), LOS_NO_TRANS); mi; ++mi)
@@ -2770,7 +2735,7 @@ static vector<monster*> _xom_find_weak_monsters(bool range)
 static void _xom_hyper_enchant_monster(int sever)
 {
     vector<enchant_type> buff_list { ENCH_MIGHT, ENCH_HASTE, ENCH_INVIS,
-                                     ENCH_EMPOWERED_SPELLS, ENCH_REPEL_MISSILES,
+                                     ENCH_EMPOWERED_SPELLS, ENCH_DEFLECT_MISSILES,
                                      ENCH_RESISTANCE, ENCH_REGENERATION,
                                      ENCH_STRONG_WILLED, ENCH_TOXIC_RADIANCE,
                                      ENCH_DOUBLED_VIGOUR, ENCH_MIRROR_DAMAGE,
@@ -2852,7 +2817,7 @@ static void _xom_hyper_enchant_monster(int sever)
                 continue;
             }
 
-            if (apply == ENCH_REPEL_MISSILES || apply == ENCH_REGENERATION
+            if (apply == ENCH_DEFLECT_MISSILES || apply == ENCH_REGENERATION
                 || apply == ENCH_TOXIC_RADIANCE || apply == ENCH_MIRROR_DAMAGE
                 || apply == ENCH_SWIFT)
             {
@@ -2863,7 +2828,7 @@ static void _xom_hyper_enchant_monster(int sever)
             else
                 lines += make_stringf("looks %s, ", ench_name.c_str());
 
-            targetable[0]->add_ench(mon_enchant(apply, 0, nullptr, time));
+            targetable[0]->add_ench(mon_enchant(apply, nullptr, time));
             buff_count++;
         }
 
@@ -2910,7 +2875,7 @@ static void _xom_mass_charm(int sever)
         }
     }
 
-    hd_target /= target_count;
+    hd_target /= max(1, target_count);
     shuffle_array(targetable);
 
     god_speaks(GOD_XOM, _get_xom_speech("mass charm").c_str());
@@ -2923,7 +2888,7 @@ static void _xom_mass_charm(int sever)
             && application->get_hit_dice() + random_range(-1, 1) <= hd_target))
         {
             simple_monster_message(*application, " is charmed.");
-            application->add_ench(mon_enchant(ENCH_CHARM, 0, &you, time));
+            application->add_ench(mon_enchant(ENCH_CHARM, &you, time));
             affected++;
         }
 
@@ -2965,21 +2930,7 @@ static void _xom_wave_of_despair(int sever)
     if (skeleton_count)
         mpr("Skeletons, inanimate yet cursed, drop down from the ceiling.");
 
-    for (int i = 0; i <= you.current_vision; ++i)
-    {
-        for (distance_iterator di(you.pos(), false, false, i); di; ++di)
-        {
-            if (grid_distance(you.pos(), *di) == i && !feat_is_solid(env.grid(*di))
-                && you.see_cell_no_trans(*di))
-            {
-                flash_tile(*di, random_choose(DARKGRAY, MAGENTA), 0);
-            }
-        }
-
-        animation_delay(35, true);
-        view_clear_overlays();
-    }
-
+    draw_ring_animation(you.pos(), you.current_vision, DARKGRAY, MAGENTA, true, 35);
     mprf(MSGCH_DANGER, "A draining tide of despair and horror washes over you and your surroundings!");
 
     const int pow = 50 + random_range(sever / 2, sever);
@@ -2991,7 +2942,7 @@ static void _xom_wave_of_despair(int sever)
             mon->strip_willpower(&you, pow, true);
 
             if (mon->holiness() & (MH_NATURAL | MH_PLANT))
-                mon->add_ench(mon_enchant(ENCH_DRAINED, 2, &you, pow));
+                mon->add_ench(mon_enchant(ENCH_DRAINED, &you, pow, 2));
 
             if (!mon->wont_attack())
                 behaviour_event(mon, ME_ANNOY, &you);
@@ -3093,7 +3044,7 @@ static void _xom_time_control(int sever)
         if ((!mons_has_attacks(**mi) && ench != ENCH_PARALYSIS) || mi->stasis())
             continue;
 
-        mi->add_ench(mon_enchant(ench, 0, &you, time));
+        mi->add_ench(mon_enchant(ench, &you, time));
     }
 
     take_note(Note(NOTE_XOM_EFFECT, you.raw_piety, -1, note), true);
@@ -3191,6 +3142,9 @@ static void _xom_pseudo_miscast(int /*sever*/)
             str = replace_all(str, "@the_feature@", in_view_name[iv]);
             str = replace_all(str, "@The_feature@",
                               uppercase_first(in_view_name[iv]));
+
+            // For name-related bits in graffiti.
+            str = do_mon_name_replacements(str);
 
             messages.push_back(str);
         }
@@ -3370,8 +3324,8 @@ static void _xom_pseudo_miscast(int /*sever*/)
         str = replace_all(str, "@your_item@", name);
         str = replace_all(str, "@Your_item@", uppercase_first(name));
 
-        /* XXX: The formless mutation doesn't technically mean you don't have a
-         * form; it means you don't have a head. */
+        // XXX: The formless mutation doesn't technically mean you don't have a
+        // form; it means you don't have a head.
         str = replace_all(str, "@head@",
                           you.has_mutation(MUT_FORMLESS) ? "form" : "head");
 
@@ -3386,8 +3340,8 @@ static void _xom_pseudo_miscast(int /*sever*/)
         str = replace_all(str, "@your_item@", name);
         str = replace_all(str, "@Your_item@", uppercase_first(name));
 
-        /* XXX: The formless mutation doesn't technically mean you don't have a
-         * form; it means you don't have a head. */
+        // XXX: The formless mutation doesn't technically mean you don't have a
+        // form; it means you don't have a head.
         str = replace_all(str, "@head@",
                           you.has_mutation(MUT_FORMLESS) ? "form" : "head");
 
@@ -3424,8 +3378,8 @@ static void _xom_pseudo_miscast(int /*sever*/)
         str = replace_all(str, "@your_item@", name);
         str = replace_all(str, "@Your_item@", uppercase_first(name));
 
-        /* XXX: The formless mutation doesn't technically mean you don't have a
-         * form; it means you don't have a head. */
+        // XXX: The formless mutation doesn't technically mean you don't have a
+        // form; it means you don't have a head.
         str = replace_all(str, "@head@",
                           you.has_mutation(MUT_FORMLESS) ? "form" : "head");
 
@@ -4256,8 +4210,7 @@ static void _xom_grants_word_of_recall(int /*sever*/)
     mprf(MSGCH_WARN, "%s is forced to slowly start %s a word of recall!",
                      targetable[0]->name(DESC_A, true, false).c_str(),
                      phrasing.c_str());
-    mon_enchant chant_timer = mon_enchant(ENCH_WORD_OF_RECALL, 1,
-                                          targetable[0], duration);
+    mon_enchant chant_timer = mon_enchant(ENCH_WORD_OF_RECALL, targetable[0], duration);
     targetable[0]->add_ench(chant_timer);
 
     note = make_stringf("made %s speak a word of recall",
@@ -4266,19 +4219,7 @@ static void _xom_grants_word_of_recall(int /*sever*/)
     take_note(Note(NOTE_XOM_EFFECT, you.raw_piety, -1, note), true);
 }
 
-static bool _has_min_banishment_level()
-{
-    int min = you.penance[GOD_XOM] ? 6 : 9;
-    return you.experience_level >= min;
-}
-
-// Rolls whether banishment will be averted.
-static bool _will_not_banish()
-{
-    return x_chance_in_y(5, you.experience_level);
-}
-
-// Disallow early banishment and make it much rarer later-on.
+// Disallow early banishment and make it rarer at lower XL in general.
 // While Xom is bored, the chance is increased.
 static bool _allow_xom_banishment()
 {
@@ -4286,20 +4227,11 @@ static bool _allow_xom_banishment()
     if (player_under_penance(GOD_XOM))
         return true;
 
-    // If Xom is bored or wrathful, banishment becomes viable earlier.
-    if (_xom_feels_nasty())
-        return !_will_not_banish();
+    if (you.experience_level < 9)
+        return false;
 
-    // Below the minimum experience level, only fake banishment is allowed.
-    if (!_has_min_banishment_level())
-    {
-        // Allow banishment; it will be retracted right away.
-        if (one_chance_in(5) && x_chance_in_y(you.raw_piety, 1000))
-            return true;
-        else
-            return false;
-    }
-    else if (_will_not_banish())
+    const int lv = min(you.experience_level - 9, 11) + (_xom_is_bored() ? 10 : 0);
+    if (!x_chance_in_y(lv, lv + 5))
         return false;
 
     return true;
@@ -4316,31 +4248,19 @@ static void _revert_banishment(bool xom_banished = true)
                    "revert banishment"), true);
 }
 
-xom_event_type xom_maybe_reverts_banishment(bool xom_banished, bool debug)
+// Only used for Xom rarely reverting others' banishment, now.
+void xom_maybe_reverts_banishment()
 {
-    // Never revert if Xom is bored or the player is under penance.
-    if (_xom_feels_nasty())
-        return XOM_BAD_BANISHMENT;
-
-    // Sometimes Xom will immediately revert banishment.
-    // Always if the banishment happened below the minimum exp level and Xom was responsible.
-    if (xom_banished && !_has_min_banishment_level() || x_chance_in_y(you.raw_piety, 1000))
-    {
-        if (!debug)
-            _revert_banishment(xom_banished);
-        return XOM_BAD_PSEUDO_BANISHMENT;
-    }
-    return XOM_BAD_BANISHMENT;
+    if (!_xom_feels_nasty() && x_chance_in_y(you.raw_piety, 1000))
+        _revert_banishment(false);
 }
 
 static void _xom_do_banishment(bool real)
 {
     god_speaks(GOD_XOM, _get_xom_speech("banishment").c_str());
 
-    int power = _xom_feels_nasty() ? you.experience_level * 3 / 2 - 10
-                                   : you.experience_level * 5 / 4 - 13;
-    // Handles note taking, scales depth by XL
-    banished("Xom", max(1, power));
+    // Handles note taking
+    banished("Xom");
     if (!real)
         _revert_banishment();
 }
@@ -4990,9 +4910,27 @@ static const vector<xom_event_data> _list_xom_bad_actions = {
                             _xom_feels_nasty());}
     },
     {
-        xom_maybe_reverts_banishment(true, true), 2, 1, [](int /*sv*/, int /*tn*/)
-        {return _allow_xom_banishment() && !player_in_branch(BRANCH_ABYSS)
-         && !(is_level_on_stack(level_id(BRANCH_ABYSS)));}
+        // Since this is an enum-based vector list and we can't adjust weights
+        // on conditions otherwise, this duplicates the Doom entry to apply
+        // slightly extra Doom on the rN∞ rMut∞ undead. Since direct Banes
+        // require boredom or wrath, it should mostly just scare players and
+        // block Xomscumming more than anything pressing on Xom balance.
+        XOM_BAD_DOOM, 50, 100, [](int /*sv*/, int tn)
+        {return tn <= 8 && you.is_lifeless_undead() &&
+                (you.attribute[ATTR_DOOM] < 80 || _xom_feels_nasty());}
+    },
+    {
+        XOM_BAD_PSEUDO_BANISHMENT, 2, 1, [](int /*sv*/, int /*tn*/)
+        {return !_xom_feels_nasty()
+                && !player_in_branch(BRANCH_ABYSS)
+                && !(is_level_on_stack(level_id(BRANCH_ABYSS)));}
+    },
+    {
+        XOM_BAD_BANISHMENT, 1, 1, [](int /*sv*/, int /*tn*/)
+        {return _allow_xom_banishment()
+                && !x_chance_in_y(you.raw_piety * 2, 1000)
+                && !player_in_branch(BRANCH_ABYSS)
+                && !(is_level_on_stack(level_id(BRANCH_ABYSS)));}
     },
 
     // Highly circumstantial effects with less total
@@ -5559,7 +5497,7 @@ static const map<xom_event_type, xom_event> xom_events = {
                                     15}},
     { XOM_BAD_DOOR_RING, {"bad door ring enclosure", _xom_bad_door_ring, 25}},
     { XOM_BAD_FAKE_SHATTER, {"fake shatter", _xom_fake_shatter, 25}},
-    { XOM_BAD_MUTATION, { "bad mutations", _xom_give_bad_mutations, 30}},
+    { XOM_BAD_MUTATION, { "random mutations", _xom_give_bad_mutations, 30}},
     { XOM_BAD_SUMMON_HOSTILES, { "summon hostiles", _xom_summon_hostiles, 35}},
     { XOM_BAD_SEND_IN_THE_CLONES, {"friendly and hostile illusions",
                                    _xom_send_in_clones, 40}},

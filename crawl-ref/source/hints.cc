@@ -1699,11 +1699,8 @@ void learned_something_new(hints_event_type seen_what, coord_def gc)
         }
         print_hint("HINT_YOU_MISCAST");
 
-        if (!player_effectively_in_light_armour()
-            || is_shield(you.shield()))
-        {
+        if (!player_effectively_in_light_armour() || you.shield())
             print_hint("HINT_MISCAST_ARMOUR");
-        }
 
         print_hint("HINT_MISCAST_CONTAMINATION_AND_MP");
         break;
@@ -2176,7 +2173,7 @@ string hints_describe_item(const item_def &item)
             }
             else if (item.sub_type == ARM_BARDING)
             {
-                ostr << "Only nagas and armataurs can wear barding.";
+                ostr << "Only nagas and anemocentaurs can wear barding.";
                 wearable = false;
             }
             else

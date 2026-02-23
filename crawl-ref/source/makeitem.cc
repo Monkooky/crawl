@@ -241,7 +241,7 @@ static bool _try_make_weapon_artefact(item_def& item, int force_type,
             return false;
 
         // Bane is a worse property than most negative values, so let's boost
-        // the resulting item a bit to temp people into using it.
+        // the resulting item a bit to tempt people into using it.
         if (artefact_property(item, ARTP_BANE))
             item.plus = min(12, item.plus + random_range(2, 5));
 
@@ -335,6 +335,12 @@ bool is_weapon_brand_ok(int type, int brand, bool /*strict*/)
     case SPWPN_SPECTRAL:
     case SPWPN_REAPING:
     case SPWPN_FOUL_FLAME: // only exists on Pan lords/Brilliance
+    case SPWPN_REBUKE:
+    case SPWPN_VALOUR:
+    case SPWPN_ENTANGLING:
+    case SPWPN_SUNDERING:
+    case SPWPN_CONCUSSION:
+    case SPWPN_DEVIOUS:
         if (is_range_weapon(item))
             return false;
         break;
@@ -774,8 +780,8 @@ static bool _try_make_armour_artefact(item_def& item, int force_type,
 
     // Bane is a worse property than most negative values, so let's make them a
     // bit more tempting on average.
-    if (is_artefact(item) && artefact_property(item, ARTP_BANE))
-        item.plus = max((int)item.plus, armour_max_enchant(item) / 2 + random_range(1, 2));
+    if (is_artefact(item) && artefact_property(item, ARTP_BANE) && item.plus < armour_max_enchant(item) * 3 / 2)
+        item.plus += random_range(1, 3);
 
     // Having an ego before this function means that it was specifically requested
     // by itemspec, so we should try to honour that.
@@ -2318,9 +2324,12 @@ void lucky_upgrade_item(item_def& item)
     if (item.flags & (ISFLAG_SEEN | ISFLAG_ARTEFACT_MASK))
         return;
 
-    // 2-4% chance of upgrading an item.
-    if (!x_chance_in_y(you.get_mutation_level(MUT_LUCKY), 50))
+    // 3-5% chance of upgrading an item.
+    if (!you.has_mutation(MUT_LUCKY)
+        || !x_chance_in_y(1 + you.get_mutation_level(MUT_LUCKY) * 2, 100))
+    {
         return;
+    }
 
     string old_name = uppercase_first(item.name(DESC_THE, false, true));
     bool did_upgrade = false;
@@ -2342,6 +2351,19 @@ void lucky_upgrade_item(item_def& item)
         identify_item(item);
         mprf("<cyan>Lucky! %s was actually %s</cyan>!", old_name.c_str(), item.name(DESC_THE).c_str());
     }
+}
+
+// Drop a fresh net on the ground after an actor somehow escapes from it.
+void drop_net_at(const coord_def& pos)
+{
+    item_def item;
+    item.base_type = OBJ_MISSILES;
+    item.sub_type  = MI_THROWING_NET;
+    item.quantity  = 1;
+    set_item_ego_type(item, OBJ_MISSILES, SPMSL_NORMAL);
+    item_colour(item);
+
+    copy_item_to_grid(item, pos);
 }
 
 #if defined(DEBUG_DIAGNOSTICS) || defined(DEBUG_TESTS)

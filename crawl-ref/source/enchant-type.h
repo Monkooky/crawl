@@ -115,7 +115,9 @@ enum enchant_type
     ENCH_SCREAMED,       // Starcursed scream timer
     ENCH_WORD_OF_RECALL, // Chanting word of recall
     ENCH_INJURY_BOND,
+#if TAG_MAJOR_VERSION == 34
     ENCH_WATER_HOLD,     // Silence and asphyxiation damage
+#endif
     ENCH_FLAYED,
     ENCH_HAUNTING,
 #if TAG_MAJOR_VERSION == 34
@@ -133,7 +135,7 @@ enum enchant_type
 #if TAG_MAJOR_VERSION == 34
     ENCH_GRASPING_ROOTS_SOURCE, // Not actually entangled, but entangling others
 #endif
-    ENCH_GRASPING_ROOTS,
+    ENCH_CONSTRICTED,
     ENCH_SPELL_CHARGED,
     ENCH_FIRE_VULN,
     ENCH_POLAR_VORTEX_COOLDOWN,
@@ -167,9 +169,9 @@ enum enchant_type
     ENCH_GOLD_LUST,
 #endif
     ENCH_DRAINED,
-    ENCH_REPEL_MISSILES,
-#if TAG_MAJOR_VERSION == 34
     ENCH_DEFLECT_MISSILES,
+#if TAG_MAJOR_VERSION == 34
+    ENCH_OLD_DEFLECT_MISSILES,
     ENCH_NEGATIVE_VULN,
     ENCH_CONDENSATION_SHIELD,
 #endif
@@ -193,9 +195,9 @@ enum enchant_type
     ENCH_WHIRLWIND_PINNED,
     ENCH_VORTEX,
     ENCH_VORTEX_COOLDOWN,
+    ENCH_VILE_CLUTCH_OLD,
 #endif
-    ENCH_VILE_CLUTCH,
-    ENCH_WATERLOGGED,
+    ENCH_FLOODED,
     ENCH_RING_OF_FLAMES,
     ENCH_RING_OF_CHAOS,
     ENCH_RING_OF_MUTATION,
@@ -249,6 +251,8 @@ enum enchant_type
     ENCH_WARDING,
     ENCH_DIMINISHED_SPELLS,
     ENCH_ORB_COOLDOWN,
+    ENCH_SUNDER_CHARGE,
+    ENCH_EXPOSED,
     // Update enchant_names[] in mon-ench.cc when adding or removing
     // enchantments.
     NUM_ENCHANTMENTS

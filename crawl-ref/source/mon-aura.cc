@@ -58,7 +58,7 @@ static const vector<mon_aura_data> aura_map =
         ENCH_INJURY_BOND, 30, false},
 
     {MONS_POLTERGUARDIAN,
-        ENCH_REPEL_MISSILES, 1, false},
+        ENCH_DEFLECT_MISSILES, 1, false},
 
     {MONS_GLOWING_ORANGE_BRAIN,
         ENCH_EMPOWERED_SPELLS, 1, false,
@@ -212,7 +212,7 @@ void mons_update_aura(const monster& mon)
                         continue;
                 }
 
-                mon_enchant new_ench(aura.ench_type, 1, &mon, aura.base_duration,
+                mon_enchant new_ench(aura.ench_type, &mon, aura.base_duration, 0,
                                      aura.is_hostile ? AURA_HOSTILE : AURA_FRIENDLY);
 
                 // Override an existing enchant rather than just add to it

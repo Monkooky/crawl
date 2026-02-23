@@ -60,6 +60,7 @@
 #include "nearby-danger.h"
 #include "notes.h"
 #include "output.h"
+#include "piety-info.h"
 #include "player-equip.h"
 #include "player-stats.h"
 #include "prompt.h"
@@ -790,7 +791,7 @@ void dec_penance(int val)
 // TODO: find out what this is duplicating & deduplicate it
 static bool _need_water_walking()
 {
-    return you.ground_level() && !you.has_mutation(MUT_MERTAIL)
+    return !you.airborne() && !you.has_mutation(MUT_MERTAIL)
            && env.grid(you.pos()) == DNGN_DEEP_WATER;
 }
 
@@ -1745,7 +1746,8 @@ static string _make_ancestor_name(gender_type gender)
     const string gender_name = gender == GENDER_MALE ? " male " :
                                gender == GENDER_FEMALE ? " female " : " ";
     const string suffix = gender_name + "name";
-    const string name = getRandNameString("ancestor", suffix);
+    string name = getRandMonNameString("ancestor" + suffix);
+    name = do_mon_name_replacements(name);
     return name.empty() ? make_name() : name;
 }
 
@@ -2509,6 +2511,7 @@ static void _gain_piety_point()
     if (player_under_penance(you.religion))
     {
         dec_penance(1);
+        you.piety_info.register_piety_gain(PG_EVENT_PENANCE_PAYMENT);
         return;
     }
     else if (you.gift_timeout > 0)
@@ -2525,6 +2528,7 @@ static void _gain_piety_point()
 #ifdef DEBUG_PIETY
             mprf(MSGCH_DIAGNOSTICS, "Piety slowdown due to gift timeout.");
 #endif
+            you.piety_info.register_piety_gain(PG_EVENT_GIFT_PENALTY);
             return;
         }
     }
@@ -2544,6 +2548,7 @@ static void _gain_piety_point()
             || you.raw_piety >= piety_breakpoint(5) && one_chance_in(3)
             || you.raw_piety >= piety_breakpoint(3) && one_chance_in(3))
         {
+            you.piety_info.register_piety_gain(PG_EVENT_STEPDOWN);
             do_god_gift();
             return;
         }
@@ -2560,6 +2565,7 @@ static void _gain_piety_point()
     // Apply hysteresis.
     // piety_hysteresis is the amount of _loss_ stored up, so this
     // may look backwards.
+    you.piety_info.register_piety_gain(PG_EVENT_TRUE_GAIN);
     if (you.piety_hysteresis)
         you.piety_hysteresis--;
     else if (you.raw_piety < MAX_PIETY)
@@ -2706,6 +2712,7 @@ void lose_piety(int pgn)
 {
     if (pgn <= 0)
         return;
+    you.piety_info.register_piety_loss(pgn);
 
     // Note that this is *not* using raw piety, since its purpose is to convey
     // messages to the player when their piety rank has lowered, and this should
@@ -2898,6 +2905,8 @@ void excommunication(bool voluntary, god_type new_god)
     you.num_current_gifts[old_god] = 0;
 
     you.religion = GOD_NO_GOD;
+
+    you.piety_info.register_excommunication();
 
     if (best_skill(SK_FIRST_SKILL, SK_LAST_SKILL) == SK_INVOCATIONS
        && you.attribute[ATTR_TRAITOR] == 0)
@@ -3092,7 +3101,7 @@ void excommunication(bool voluntary, god_type new_god)
             branch_bribe[it->id] = 0;
         add_daction(DACT_BRIBE_TIMEOUT);
         add_daction(DACT_REMOVE_GOZAG_SHOPS);
-        shopping_list.remove_dead_shops();
+        shopping_list.remove_gozag_shops();
         you.exp_docked[old_god] = excom_xp_docked();
         you.exp_docked_total[old_god] = you.exp_docked[old_god];
         break;
@@ -3869,6 +3878,7 @@ void join_religion(god_type which_god)
     mark_milestone("god.worship", "became a worshipper of "
                    + god_name(you.religion) + ".");
     take_note(Note(NOTE_GET_GOD, you.religion));
+    you.piety_info.register_join();
 
     const function<void ()> *join_effect = map_find(on_join, you.religion);
     if (join_effect != nullptr)
@@ -4207,6 +4217,12 @@ bool god_protects_from_harm()
     return false;
 }
 
+void decay_piety()
+{
+    lose_piety(1);
+    you.piety_info.register_piety_decay();
+}
+
 void handle_god_time(int /*time_delta*/)
 {
     if (you.attribute[ATTR_GOD_WRATH_COUNT] > 0)
@@ -4252,7 +4268,7 @@ void handle_god_time(int /*time_delta*/)
         case GOD_SIF_MUNA:
         case GOD_YREDELEMNUL:
             if (one_chance_in(17))
-                lose_piety(1);
+                decay_piety();
             break;
 
         case GOD_ELYVILON:
@@ -4262,12 +4278,12 @@ void handle_god_time(int /*time_delta*/)
         case GOD_SHINING_ONE:
         case GOD_NEMELEX_XOBEH:
             if (one_chance_in(35))
-                lose_piety(1);
+                decay_piety();
             break;
 
         case GOD_BEOGH:
             if (one_chance_in(17))
-                lose_piety(1);
+                decay_piety();
             maybe_generate_apostle_challenge();
             break;
 
@@ -4517,15 +4533,13 @@ int get_monster_tension(const monster& mons, god_type god)
     if (!mons.alive())
         return 0;
 
-    if (you.see_cell(mons.pos()))
-    {
-        if (!mons_can_hurt_player(&mons))
-            return 0;
-    }
+    // Monsters locked behind glass and similar.
+    if (mons_is_irrelevant(&mons))
+        return 0;
 
     const mon_attitude_type att = mons_attitude(mons);
 
-    if (mons.cannot_act())
+    if (mons.helpless())
         return 0;
 
     int exp = exp_value(mons);
@@ -4534,7 +4548,7 @@ int get_monster_tension(const monster& mons, god_type god)
     // is offhand, but they should count for _some_ minimal tension.
     if (exp <= 0)
     {
-        if (mons.is_peripheral())
+        if (mons.is_peripheral() && !mons.is_firewood())
             exp = 50;
         else
             return 0;
@@ -4680,10 +4694,11 @@ int get_tension(god_type god)
         { player_on_orb_run(),                           {2, 1} },
         { you.caught(),                                  {2, 1} },
         { you.duration[DUR_VAINGLORY] > 0,               {5, 3} },
-        { silenced(you.pos()),                           {5, 3} },
+        { you.is_silenced(),                             {5, 3} },
         { you.form == transformation::fungus
             || you.form == transformation::pig
-            || you.form == transformation::tree,         {5, 3} },
+            || you.form == transformation::tree
+            || you.form == transformation::jelly,        {5, 3} },
         { player_in_branch(BRANCH_ABYSS),                {3, 2} },
         { you.duration[DUR_ATTRACTIVE] > 0,              {3, 2} },
         { you.duration[DUR_NO_CAST] > 0,                 {3, 2} },
@@ -4701,7 +4716,6 @@ int get_tension(god_type god)
         { you.duration[DUR_AFRAID] > 0,                  {6, 5} },
         { you.duration[DUR_BLIND] > 0,                   {6, 5} },
         { you.duration[DUR_MESMERISED] > 0,              {6, 5} },
-        { you.duration[DUR_WATER_HOLD] > 0,              {6, 5} },
         { env.grid(you.pos()) == DNGN_SHALLOW_WATER && !you.airborne()
             && !you.can_swim(),                          {6, 5} },
         { player_in_branch(BRANCH_PANDEMONIUM),          {9, 8} },

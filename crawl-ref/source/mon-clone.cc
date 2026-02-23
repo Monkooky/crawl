@@ -187,7 +187,6 @@ static void _mons_load_player_enchantments(monster* creator, monster* target)
             if (ench == ENCH_NONE)
                 continue;
             target->add_ench(mon_enchant(ench,
-                                         0,
                                          creator,
                                          you.duration[i]));
         }
@@ -326,17 +325,14 @@ monster* clone_mons(const monster* orig, bool quiet, bool* obvious,
 
     *mons          = *orig;
     mons->set_new_monster_id();
-    mons->move_to_pos(pos);
+    mons->move_to(pos, MV_INTERNAL);
     mons->attitude = mon_att;
 
     // The monster copy constructor doesn't copy constriction, so no need to
-    // worry about that. We do need to worry about the enchantments associated
-    // with direct constriction, though.
-    if (mons->has_ench(ENCH_VILE_CLUTCH))
-        mons->del_ench(ENCH_VILE_CLUTCH);
-
-    if (mons->has_ench(ENCH_GRASPING_ROOTS))
-        mons->del_ench(ENCH_GRASPING_ROOTS);
+    // worry about that. We do need to worry about the enchantment associated
+    // with temporary constriction, though.
+    if (mons->has_ench(ENCH_CONSTRICTED))
+        mons->del_ench(ENCH_CONSTRICTED);
 
     // Don't copy death triggers - phantom royal jellies should not open the
     // Slime vaults on death.
@@ -393,13 +389,6 @@ monster* clone_mons(const monster* orig, bool quiet, bool* obvious,
         if (!quiet)
             simple_monster_message(*orig, " is duplicated!");
         *obvious = true;
-    }
-
-    if (you.can_see(*mons))
-    {
-        handle_seen_interrupt(mons);
-        viewwindow();
-        update_screen();
     }
 
     if (crawl_state.game_is_arena())

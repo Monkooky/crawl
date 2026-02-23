@@ -334,9 +334,9 @@ public:
 enum mons_equip_desc_level_type
 {
     DESC_WEAPON,
+    DESC_NOTEWORTHY,
+    DESC_NOTEWORTHY_AND_WEAPON,
     DESC_FULL,
-    DESC_IDENTIFIED,
-    DESC_WEAPON_WARNING, // like DESC_WEAPON but also includes dancing weapons
 };
 
 void direction(dist &moves, const direction_chooser_args& args);
@@ -366,7 +366,8 @@ string raw_feature_description(const coord_def& where);
 string feature_description(dungeon_feature_type grid,
                            trap_type trap = NUM_TRAPS,
                            const string & cover_desc = "",
-                           description_level_type dtype = DESC_A);
+                           description_level_type dtype = DESC_A,
+                           level_id place = level_id::current());
 
 vector<dungeon_feature_type> features_by_desc(const base_pattern &pattern);
 

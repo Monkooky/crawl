@@ -124,12 +124,8 @@ NAME:    abyss_entry_flame_altar
 TAGS:    nolayout_encompass
 : abyss_entry(_G, 'O')
 SUBST:   A : deG
-MARKER:  d = lua:fog_machine { cloud_type = "flame", \
-             pow_min = 10, pow_max = 10, delay = 10, \
-             size = 1, walk_dist = 0, spread_rate= 0, excl_rad = 0 }
-MARKER:  e = lua:fog_machine { cloud_type = "seething chaos", \
-             pow_min = 10, pow_max = 10, delay = 10, \
-             size = 1, walk_dist = 0, spread_rate= 0, excl_rad = 0 }
+: single_cloud(_G, "d", "flame", false)
+: single_cloud(_G, "e", "seething chaos", true)
 KFEAT:   _ = altar_lugonu
 MAP
  bbb
@@ -245,6 +241,42 @@ xx..D..+-+..E...xxx
       ''....cc..xx.xx
       @''..xx....xxx
         ''xx''@'''x
+ENDMAP
+
+NAME:    regret_index_abyss_entry_lash
+TAGS:    transparent nolayout_encompass
+MONS:    rakshasa / occultist / very ugly thing / \
+         kobold fleshcrafter w:4 / glass eye w:2
+MONS:    tentacled monstrosity / lich / \
+         chonchon w:4 / storm dragon simulacrum w:2
+KFEAT:   y = c
+KFEAT:   z = x
+SHUFFLE: AB / CD, IJKLM, 0G / 0G / G0
+SUBST:   A : "zzz, B : cybb, CD = ', IJ : xcc, K : x`, LM = .
+NSUBST:  0 = 1:2 / *:1
+FTILE:   '12OG : floor_mystic_chasm / floor_grey_dirt_b
+FTILE:   " : floor_nerves_blue / floor_nerves_magenta
+TILE:    b : dngn_crystal_blue / dngn_crystal_magenta
+: tile("y = " .. crackle_def(_G))
+TILE:    z = wall_abyss_blue
+: abyss_entry(_G, 'O')
+CLEAR:   `
+MAP
+     J.   I   .J
+      J   I   J
+      J   I   J
+       J  .  J
+ K      . x .      K
+ .KK    xxxxx    KK.
+    K  xxx0xxx  K
+     .xxx'''xxx.
+    xxxx'ACB'xxxx
+LL.xxxx0'DOD'0xxxx.LL
+    xxxx'BCA'xxxx
+     .xxx'''xxx.
+    M  xx'x'xx  M
+ .MM    xx'xx    MM.
+ M       .x.       M
 ENDMAP
 
 ###############################################################################
@@ -1677,8 +1709,7 @@ KFEAT:   " = runelight
 SHUFFLE: HIJKL, MNOPQ
 SUBST:   HIMN = l, J : ll., KL = ., O : llP, PQ : xxxxb, c : ccv
 NSUBST:  ' = 1:4 / 1:8 / 1 = 22248 / 10 = 2216 / *:., d = 1:dddd. / *:.
-MARKER:  F = lua:fog_machine { cloud_type = "translocational energy", \
-             pow_max = 2, delay_min = 10, delay_max = 20, walk_dist = 0, size = 1 }
+: single_cloud(_G, "F", "translocational energy", true)
 FTILE:   AF3579_OG+ = floor_crystal_squares
 COLOUR:  F3579 = lightmagenta
 MAP

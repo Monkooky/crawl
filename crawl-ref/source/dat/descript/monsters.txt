@@ -163,7 +163,7 @@ none of Sigmund's skills in magic, but makes up for it with his skills in
 fighting and a canny head for money. He is eager to prove his superiority by
 killing hapless adventurers with his expensive flail and quick wit.
 %%%%
-the Enchantress
+Enchantress
 
 First and most fearful of her kind, the Enchantress rules over the spriggans of
 the dungeon. She wears an opalescent outfit made of dragon skin that shimmers
@@ -317,7 +317,7 @@ Kirke
 A master of transformation and treachery. Beware, or you may be the next swine
 to join her herd!
 %%%%
-the Lernaean hydra
+Lernaean hydra
 
 A huge beast, mightiest of hydras, infamous in myth and legend. It flows
 through the water faster than a human can run, swatting aside trees as though
@@ -610,22 +610,22 @@ tell where one ends and the other begins. She entered the Dungeon to search for
 the secrets of an ancient, long-suppressed cult, said to have exalted metal over
 flesh. The price of knowledge was her humanity - a price she paid eagerly.
 %%%%
-the Serpent of Hell gehenna
+Serpent of Hell gehenna
 
 A huge, red-glowing, three-headed dragon, shrouded in damnation. It is
 possessed by the very essence of Gehenna and its eternal fire.
 %%%%
-the Serpent of Hell cocytus
+Serpent of Hell cocytus
 
 A massive white three-headed dragon, covered with shards of gleaming ice,
 wholly possessed by the nightmarish cold of Cocytus.
 %%%%
-the Serpent of Hell dis
+Serpent of Hell dis
 
 A towering three-headed beast with an army's worth of swords for teeth. Each of
 its scales is a shield with a razored edge.
 %%%%
-the Serpent of Hell tartarus
+Serpent of Hell tartarus
 
 Seemingly three pairs of lurid magenta eyes hanging in the darkness, the
 outline of a vast, sinuous dragon is just barely perceptible behind. Its malice
@@ -714,10 +714,6 @@ arcanist
 A wizard fond of spectacle and destruction. They scorn the cowardice of other
 magicians, who hide from their foes rather than simply blasting them out of
 existence.
-%%%%
-armataur
-
-A curious quadraped, resembling a cross between an armadillo and a yaktaur.
 %%%%
 armour echo
 
@@ -897,9 +893,10 @@ flows heavily through it, overlaying this reality with countless others where
 its domain remains pristine.
 
 Each tesseract is inextricably linked to the other, and destroying one will
-destroy both (and expel many of the creatures they have beckoned to this
-reality). But so long as they are allowed to exist, there will be no end to the
-forces which seek to keep you from the Orb.
+destroy both (and expel all the creatures they have beckoned to this reality,
+as well as dazing even those which they have not). But so long as they are
+allowed to exist, there will be no end to the forces which seek to keep you from
+the Orb.
 %%%%
 brain worm
 
@@ -927,6 +924,12 @@ burial acolyte
 
 A masked priest in the service of Kikubaaqudgha, well-versed in choral rituals
 to both rouse the dead and send them to eternal rest.
+%%%%
+burstshroom
+
+A rapidly-growing mushroom whose life-cycle culminates in an explosive release
+of spores. These spores have a mild psychoactive effect and can sometimes daze
+creatures who breathe them in.
 %%%%
 bush
 
@@ -976,6 +979,12 @@ caustic shrike
 
 A swift, nightmarish bird whose razor-sharp metallic feathers drip with
 corrosive acid.
+%%%%
+caustic sporangium
+
+A balloon-like sac of slime mold spores, suspended in a nutrient slurry to
+sustain them on their search for a new home. To the great misfortune of any
+adventurers in the vicinity, this slurry is also a highly potent acid.
 %%%%
 centaur
 
@@ -1031,6 +1040,12 @@ A mechanical insect powered by an intricate array of gears and springs. It is
 vicious and resilient to damage, but its clockwork naturally winds down as it
 attacks, eventually leaving it unable to move until its creator winds it again.
 %%%%
+colossal amoeba
+
+An unfathomably massive pile of mystic pulsating protoplasm. The slightest
+threat will cause it to undergo rapid weaponised mitosis, rapidly overwhelming
+potential meals in a cytoplasmic tidal wave.
+%%%%
 crawling flesh cage
 
 A modern breakthrough in arcane experimentation, this mobile prison cell
@@ -1042,6 +1057,12 @@ creeping inferno
 A formless mass of ancient fire, bound by heat and malevolence. It longs to
 unleash itself as a wild fire storm, yet must first patiently burn towards its
 victims with implaceable inevitability.
+%%%%
+creeping plasmodium
+
+An enormous and unnervingly motile slime mold colony. It creeps along the
+crevices of the walls in search of nutrients and can spread itself to new
+locations by launching enormous sporangia.
 %%%%
 crimson imp
 
@@ -1413,6 +1434,14 @@ entropy weaver
 A gaunt humanoid with flaking, pale chitin. Its spindly limbs are capable of
 startlingly quick movement and end in razor-sharp talons.
 %%%%
+erythrospite
+
+A churning mass of flowing blood that throbs to the beat of an absent heart.
+
+Does it wish to bury itself in your arteries because it recognises, on some
+primordial level, that this is where it belongs? Alas, all it is capable of in
+this fleeing moment of sentience is violence.
+%%%%
 ettin
 
 A two-headed giant, stronger than most, and able to land devastating blows left
@@ -1426,6 +1455,12 @@ scythe-like blades.
 eye of devastation
 
 A huge eyeball, encased in a levitating globe of incandescent energy.
+%%%%
+eye of draining
+
+A hovering horror, rare and unnatural even amongst servitor eyes, radiating
+baleful energies. They monitor the flow of chaotic life and ever-present death
+for the divine Jiyva.
 %%%%
 faun
 
@@ -1943,7 +1978,7 @@ for underhanded tactics.
 %%%%
 kobold blastminer
 
-A kobold, ready with multiple armaments to defends itself from the many
+A kobold, ready with multiple armaments to defend itself from the many
 dangers of the depths. The blastmote-packed cannon on its shoulder bears its
 maker's mark, and is fiercely loyal; it will fire for none other.
 %%%%
@@ -2107,6 +2142,15 @@ the brim with explosives. It can rapidly fill an area with bomblets, and when
 commanded by its creator, will explode them all (and itself) to devastating
 effect.
 %%%%
+morphogenic ooze
+
+A multihued mire of roiling flesh and fluctuating sludge, striving and failing
+for more coherence than any other slime. As a fresh carrier of the ruinous
+contagion that overtook the Slime Pits, it can impart unto others the same
+horrible fate. While it may not be a permanent transformation for you, the
+melding of weapons and armour, as well as the severe weakening of spells, may
+make it a lethal one regardless.
+%%%%
 moth of wrath
 
 A moth known for its ability to inspire rage by touching its foes, or merely
@@ -2171,6 +2215,11 @@ nameless horror
 A malign force from the space between planes. It is hostile to the magic forces
 that removed it from its home. These horrors are often the result of mistaken
 summoning spells and have slain many aspiring wizards.
+%%%%
+nascent plasmodium
+
+A slime mold colony in an early phase of its life cycle. Not yet mature enough
+to reproduce, it can still defend itself by firing globs of potent acid.
 %%%%
 nargun
 
@@ -2627,7 +2676,7 @@ An oozing avalanche, scouring the ground beneath it as it rumbles forward.
 It consumes only the metal and bone from its victims, using them to reinforce
 itself even further.
 %%%%
-the Royal Jelly
+Royal Jelly
 
 A particularly rich and golden gelatinous thing. Smaller jellies swim and pulse
 just below its surface, ready to burst forth at the slightest touch.
@@ -2859,6 +2908,19 @@ An icky glob of slime that slithers along the ground. It can merge with other
 slime creatures to become dramatically more dangerous, and is especially likely
 to do so in confined spaces.
 %%%%
+slymdra
+
+A quivering amalgam of viscous slime, its many pseudopods gnashing at the air
+like a throng of reptilian maws. It rapidly absorbs nearby slime creatures into
+itself, growing a new 'head' for each one and becoming even more resilient.
+
+Whether through convergent evolution or genetic memory, it also shares the
+hydra's most infamous trait: lopping off a head with a bladed weapon will just
+make it grow two more unless the wound is cauterised by a flaming weapon.
+
+When not stalking prey, its constituent slimes may separate from it again,
+perhaps to seek new food sources on their own.
+%%%%
 small abomination
 
 A hideous mass of body parts. Each varies in speed, strength, or resilience by
@@ -2979,6 +3041,12 @@ spriggan rider
 
 A spriggan that has tamed a hornet as its mount, and is tasked with protecting
 the spriggan fens and cairns from intruders.
+%%%%
+star jelly
+
+A white gelatinous mound that pulses with a strange iridescence. Its body
+absorbs magical energy like a sponge, and when sufficiently injured, will
+unleash this energy as a flurry of shooting stars.
 %%%%
 starcursed mass
 
@@ -3279,10 +3347,10 @@ with a humanoid.
 %%%%
 void ooze
 
-The viscous detritus of a thousand failed spells, surging forward with a speed
-that defies its towering size. Its very substance is a hole in the fabric of
-magic; enchantments find no purchase there and it leaches magical power from
-anything it touches like a dry sponge in water.
+The viscous detritus of a thousand failed spells, surging forward with unnerving
+speed. Its very substance is a hole in the fabric of magic; enchantments find no
+purchase there and even momentary contact with it can leave one's spells greatly
+diminished.
 %%%%
 walking alembic
 

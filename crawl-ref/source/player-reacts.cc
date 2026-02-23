@@ -59,6 +59,7 @@
 #include "maps.h"
 #include "message.h"
 #include "mon-abil.h"
+#include "mon-act.h"
 #include "mon-cast.h"
 #include "mon-death.h"
 #include "mon-place.h"
@@ -128,6 +129,9 @@ static bool _decrement_a_duration(duration_type dur, int delay,
 {
     ASSERT(you.duration[dur] >= 0);
     if (you.duration[dur] == 0)
+        return false;
+
+    if (you.attempted_attack && duration_extended_by_attacks(dur))
         return false;
 
     ASSERT(!exploss || expmsg != nullptr);
@@ -392,7 +396,7 @@ static void _update_claustrophobia()
     int count = 0;
     for (adjacent_iterator ai(you.pos()); ai; ++ai)
     {
-        if (feat_is_wall(env.grid(*ai)))
+        if (feat_is_solid(env.grid(*ai)))
             ++count;
     }
 
@@ -469,32 +473,24 @@ static void _handle_uskayaw_time(int time_taken)
 
 static void _handle_hoarding()
 {
-    const int potion_lv = you.get_mutation_level(MUT_HOARD_POTIONS);
-    if (potion_lv)
+    if (you.has_mutation(MUT_RENOUNCE_POTIONS))
     {
-        const int trigger_hp = potion_lv == 1 ? you.hp_max * 65 / 100
-                                              : you.hp_max * 4 / 10;
-
-        if (you.hp <= trigger_hp)
-            you.props.erase(HOARD_POTIONS_TIMER_KEY);
-        else if (!i_feel_safe(false, false, true))
-            you.props[HOARD_POTIONS_TIMER_KEY].get_int() = you.elapsed_time + 60;
-        else if (you.elapsed_time > you.props[HOARD_POTIONS_TIMER_KEY].get_int())
-            you.props.erase(HOARD_POTIONS_TIMER_KEY);
+        if (you.hp < you.hp_max / 2)
+            you.props.erase(RENOUNCE_POTIONS_TIMER_KEY);
+        else if (there_are_monsters_nearby(true, true, false))
+            you.props[RENOUNCE_POTIONS_TIMER_KEY].get_int() = you.elapsed_time + 60;
+        else if (you.elapsed_time > you.props[RENOUNCE_POTIONS_TIMER_KEY].get_int())
+            you.props.erase(RENOUNCE_POTIONS_TIMER_KEY);
     }
 
-    const int scroll_lv = you.get_mutation_level(MUT_HOARD_SCROLLS);
-    if (scroll_lv)
+    if (you.has_mutation(MUT_RENOUNCE_SCROLLS))
     {
-        const int trigger_hp = scroll_lv == 1 ? you.hp_max * 65 / 100
-                                              : you.hp_max * 4 / 10;
-
-        if (you.hp <= trigger_hp)
-            you.props.erase(HOARD_SCROLLS_TIMER_KEY);
-        else if (!i_feel_safe(false, false, true))
-            you.props[HOARD_SCROLLS_TIMER_KEY].get_int() = you.elapsed_time + 60;
-        else if (you.elapsed_time > you.props[HOARD_SCROLLS_TIMER_KEY].get_int())
-            you.props.erase(HOARD_SCROLLS_TIMER_KEY);
+        if (you.hp <= you.hp_max / 2)
+            you.props.erase(RENOUNCE_SCROLLS_TIMER_KEY);
+        else if (there_are_monsters_nearby(true, true, false))
+            you.props[RENOUNCE_SCROLLS_TIMER_KEY].get_int() = you.elapsed_time + 60;
+        else if (you.elapsed_time > you.props[RENOUNCE_SCROLLS_TIMER_KEY].get_int())
+            you.props.erase(RENOUNCE_SCROLLS_TIMER_KEY);
     }
 }
 
@@ -521,20 +517,14 @@ void player_reacts_to_monsters()
     _decrement_petrification(you.time_taken);
     _decrement_sleep_and_daze(you.time_taken);
 
-    if (_decrement_a_duration(DUR_GRASPING_ROOTS, you.time_taken)
+    if (_decrement_a_duration(DUR_CONSTRICTED, you.time_taken)
         && you.is_constricted())
     {
-        actor* src = actor_by_mid(you.constricted_by);
-        mprf("%s grasping roots sink back into the ground.",
-             src ? src->name(DESC_ITS).c_str() : "The");
-        you.stop_being_constricted(true);
-    }
-    if (_decrement_a_duration(DUR_VILE_CLUTCH, you.time_taken)
-        && you.is_constricted())
-    {
-        actor* src = actor_by_mid(you.constricted_by);
-        mprf("%s zombie hands return to the earth.",
-             src ? src->name(DESC_ITS).c_str() : "The");
+        if (you.constricted_type == CONSTRICT_ROOTS)
+            mprf("The roots around you sink back into the ground.");
+        else if (you.constricted_type == CONSTRICT_BVC)
+            mprf("The zombie hands holding you return to the earth.");
+
         you.stop_being_constricted(true);
     }
 
@@ -603,11 +593,17 @@ void player_reacts_to_monsters()
     _handle_hoarding();
 
     you.props.erase(PYROMANIA_TRIGGERED_KEY);
+    you.shouted_pos.reset();
+
+    // Cloud spreading or monster actions may have changed the player's LoS,
+    // so check these again now.
+    you.update_beholders();
+    you.update_fearmongers();
 }
 
 static bool _check_recite()
 {
-    if (silenced(you.pos())
+    if (you.is_silenced()
         || you.paralysed()
         || you.confused()
         || you.asleep()
@@ -664,9 +660,9 @@ static void _handle_recitation(int step)
  */
 static void _try_to_respawn_ancestor()
 {
-     monster *ancestor = create_monster(hepliaklqana_ancestor_gen_data());
-     if (!ancestor)
-         return;
+    monster *ancestor = create_monster(hepliaklqana_ancestor_gen_data());
+    if (!ancestor)
+        return;
 
     mprf("%s emerges from the mists of memory!",
          ancestor->name(DESC_YOUR).c_str());
@@ -699,14 +695,27 @@ static void _decrement_transform_duration(int delay)
     }
 }
 
-static void _decrement_rampage_heal_duration(int delay)
+static void _handle_trickster_decay(int delay)
 {
-    const int heal = you.props[RAMPAGE_HEAL_KEY].get_int();
-    if (heal > 0 && _decrement_a_duration(DUR_RAMPAGE_HEAL, delay))
+    if (you.duration[DUR_TRICKSTER_GRACE] || delay == 0)
+        return;
+
+    if (!you.props.exists(TRICKSTER_POW_KEY))
+        return;
+
+    int& stacks = you.props[TRICKSTER_POW_KEY].get_int();
+
+    // Decay at a rate of ~1 AC per 30 aut.
+    const int reduction = div_rand_round(3, delay);
+    stacks -= reduction;
+    if (stacks <= 0)
     {
-        you.props[RAMPAGE_HEAL_KEY] = heal - 1;
-        reset_rampage_heal_duration();
+        you.props.erase(TRICKSTER_POW_KEY);
+        mprf(MSGCH_DURATION, "You feel your existence waver again.");
     }
+
+    if (reduction > 0)
+        you.redraw_armour_class = true;
 }
 
 static void _handle_gastronomic_expanse_duration(int delay)
@@ -798,7 +807,11 @@ static void _decrement_durations()
         reset_powered_by_death_duration();
     }
 
-    _decrement_rampage_heal_duration(delay);
+    if (_decrement_a_duration(DUR_SALVO, delay))
+    {
+        if (--you.props[SALVO_KEY].get_int() > 0)
+            you.duration[DUR_SALVO] = random_range(20, 40);
+    }
 
     dec_ambrosia_player(delay);
     dec_channel_player(delay);
@@ -902,8 +915,25 @@ static void _decrement_durations()
     _decrement_a_duration(DUR_DETONATION_CATALYST, delay,
         "Your catalyst becomes inert.");
 
-    if (you.duration[DUR_WATER_HOLD])
-        handle_player_drowning(delay);
+    if (you.duration[DUR_FLOODED])
+    {
+        // eg: if you turned into a tree.
+        if (you.res_water_drowning())
+            you.duration[DUR_FLOODED] = 0;
+        else if (_decrement_a_duration(DUR_FLOODED, delay))
+        {
+            mprf(MSGCH_RECOVERY, "You finish coughing all the %s out of your lungs.",
+                 you.props[WATER_HOLD_SUBSTANCE_KEY].get_string().c_str());
+            you.duration[DUR_FLOODED_IMMUNITY] = you.time_taken + 1;
+        }
+        else
+        {
+            mprf(MSGCH_WARN, "Your lungs strain for air.");
+            const int dmg = roll_dice(2, 5);
+            ouch(div_rand_round(dmg * delay, BASELINE_DELAY), KILLED_BY_WATER,
+                                                you.props[WATER_HOLDER_KEY].get_int());
+        }
+    }
 
     if (you.duration[DUR_FLAYED])
     {
@@ -1043,6 +1073,46 @@ static void _decrement_durations()
     if (you.duration[DUR_FUSILLADE] && you.time_taken > 0)
         fire_fusillade();
 
+    if (you.duration[DUR_CELEBRANT_COOLDOWN] && you.hp == you.hp_max)
+    {
+        mprf(MSGCH_DURATION, "You are ready to perform a blood rite again.");
+        you.duration[DUR_CELEBRANT_COOLDOWN] = 0;
+    }
+
+    if (you.duration[DUR_TIME_WARPED_BLOOD_COOLDOWN] && you.hp == you.hp_max)
+    {
+        // Don't print it the message if the mutation is lost
+        // before the cooldown wears off.
+        if (you.get_mutation_level(MUT_TIME_WARPED_BLOOD))
+            mprf(MSGCH_DURATION, "Your time-warped blood is ready to ripple again.");
+
+        you.duration[DUR_TIME_WARPED_BLOOD_COOLDOWN] = 0;
+    }
+
+    if (you.duration[DUR_HIVE_COOLDOWN] && you.hp == you.hp_max)
+    {
+        mprf(MSGCH_DURATION, "The buzzing within you returns to its normal rhythm.");
+        you.duration[DUR_HIVE_COOLDOWN] = 0;
+    }
+
+    if (you.duration[DUR_MEDUSA_COOLDOWN] && you.hp == you.hp_max)
+    {
+        mprf(MSGCH_DURATION, "You feel your defenses recover.");
+        you.duration[DUR_MEDUSA_COOLDOWN] = 0;
+    }
+
+    if (you.duration[DUR_SPITEFUL_BLOOD_COOLDOWN] && you.hp == you.hp_max)
+        you.duration[DUR_SPITEFUL_BLOOD_COOLDOWN] = 0;
+
+    if (you.duration[DUR_EELJOLT_COOLDOWN] && you.hp == you.hp_max)
+    {
+        mprf(MSGCH_DURATION, "Your %s have fully recharged.", you.hand_name(true).c_str());
+        you.duration[DUR_EELJOLT_COOLDOWN] = 0;
+    }
+
+    if (you.has_mutation(MUT_TRICKSTER))
+        _handle_trickster_decay(delay);
+
     // these should be after decr_ambrosia, transforms, liquefying, etc.
     for (int i = 0; i < NUM_DURATIONS; ++i)
         if (duration_decrements_normally((duration_type) i))
@@ -1055,9 +1125,8 @@ static void _handle_emergency_flight()
 
     if (!is_feat_dangerous(orig_terrain(you.pos()), true, false))
     {
-        mpr("You float gracefully downwards.");
-        land_player();
         you.props.erase(EMERGENCY_FLIGHT_KEY);
+        land_player();
     }
     else
     {
@@ -1079,7 +1148,7 @@ void maybe_attune_regen_items(bool attune_regen, bool attune_mana_regen)
 
     bool gained_regen = false;
     bool gained_mana_regen = false;
-    bool gained_alchemy = false;
+    bool gained_chemistry = false;
 
     for (player_equip_entry& entry : you.equipment.items)
     {
@@ -1095,8 +1164,8 @@ void maybe_attune_regen_items(bool attune_regen, bool attune_mana_regen)
             // Track which properties we should notify the player they have gained.
             if (!gained_regen && is_regen_item(arm))
                 gained_regen = true;
-            if (arm.is_type(OBJ_JEWELLERY, AMU_ALCHEMY))
-                gained_alchemy = true;
+            if (arm.is_type(OBJ_JEWELLERY, AMU_CHEMISTRY))
+                gained_chemistry = true;
             else if (!gained_mana_regen && is_mana_regen_item(arm))
                 gained_mana_regen = true;
 
@@ -1121,7 +1190,7 @@ void maybe_attune_regen_items(bool attune_regen, bool attune_mana_regen)
                 gained_regen && gained_mana_regen ? " health and magic"
                 : (gained_regen ? "" : " magic")));
     }
-    if (gained_alchemy)
+    if (gained_chemistry)
         msgs.emplace_back("extract magic from the potions you drink");
 
     plural = plural || eq_list.size() > 1;
@@ -1152,6 +1221,14 @@ static void _regenerate_hp_and_mp(int delay)
     {
         const int base_val = player_regen();
         you.hit_points_regeneration += div_rand_round(base_val * delay, BASELINE_DELAY);
+    }
+
+    if (you.duration[DUR_INDOMITABLE])
+    {
+        const int per_aut = player_indomitable_regen_rate();
+        const int total = min(per_aut * delay, you.duration[DUR_INDOMITABLE]);
+        you.duration[DUR_INDOMITABLE] -= total;
+        you.hit_points_regeneration += total;
     }
 
     while (you.hit_points_regeneration >= 100)
@@ -1208,27 +1285,26 @@ static void _handle_fugue(int delay)
     }
 }
 
-static void _handle_trickster_decay(int delay)
+static void _do_eel_flavour_msg()
 {
-    if (you.duration[DUR_TRICKSTER_GRACE] || delay == 0)
+    // No time for play while there's enemies to zap!
+    if (there_are_monsters_nearby(true, true, false))
         return;
 
-    if (!you.props.exists(TRICKSTER_POW_KEY))
-        return;
+    string msg;
+    if (you.arm_count() == 1)
+        msg = getSpeakString("eel hand solo actions");
+    else
+        msg = getSpeakString("eel hand actions");
 
-    int& stacks = you.props[TRICKSTER_POW_KEY].get_int();
+    // XXX: Apologies for the ad hoc string replacement. We really need a
+    //      centralised place to do this...
+    msg = replace_all(msg, "@head@",
+                        you.has_mutation(MUT_FORMLESS) ? "form" : "head");
 
-    // Decay at a rate of ~1 AC per 30 aut.
-    const int reduction = div_rand_round(3, delay);
-    stacks -= reduction;
-    if (stacks <= 0)
-    {
-        you.props.erase(TRICKSTER_POW_KEY);
-        mprf(MSGCH_DURATION, "You feel your existence waver again.");
-    }
+    msg = replace_all(msg, "@skin@", species::skin_name(you.species).c_str());
 
-    if (reduction > 0)
-        you.redraw_armour_class = true;
+    mprf(MSGCH_TALK, "%s", msg.c_str());
 }
 
 void player_reacts()
@@ -1237,19 +1313,17 @@ void player_reacts()
     if (crawl_state.game_is_descent() && !env.properties.exists(DESCENT_STAIRS_KEY))
         return;
 
+    if (you.did_east_wind > 0)
+        --you.did_east_wind;
+
     // This happens as close as possible after the player acts, for better messaging
     if (you_worship(GOD_BEOGH))
         beogh_ally_healing();
 
-    //XXX: does this _need_ to be calculated up here?
-    const int stealth = player_stealth();
-
-#ifdef DEBUG_STEALTH
-    // Too annoying for regular diagnostics.
-    mprf(MSGCH_DIAGNOSTICS, "stealth: %d", stealth);
-#endif
-
     unrand_reacts();
+
+    if (you.form == transformation::eel_hands && one_chance_in(500))
+        _do_eel_flavour_msg();
 
     _handle_fugue(you.time_taken);
     if (you.has_mutation(MUT_WARMUP_STRIKES))
@@ -1258,9 +1332,16 @@ void player_reacts()
     if (x_chance_in_y(you.time_taken, 10 * BASELINE_DELAY))
     {
         const int teleportitis_level = get_teleportitis_level();
-        // this is instantaneous
-        if (teleportitis_level > 0 && one_chance_in(100 / teleportitis_level))
-            you_teleport_now(false, true, "You feel strangely unstable.");
+
+        if (teleportitis_level > 0
+            && !you.duration[DUR_TELEPORT]
+            && one_chance_in(40 / teleportitis_level)
+            && hostile_teleport_is_possible()
+            && you.elapsed_time >= you.props[TELEPORTITIS_COOLDOWN_KEY].get_int())
+        {
+            you_teleport(true, MID_PLAYER);
+            you.props[TELEPORTITIS_COOLDOWN_KEY] = you.elapsed_time + random_range(500, 1000);
+        }
         else if (player_in_branch(BRANCH_ABYSS) && one_chance_in(80)
                  && (!map_masked(you.pos(), MMT_VAULT) || one_chance_in(3)))
         {
@@ -1275,6 +1356,8 @@ void player_reacts()
     }
 
     abyss_maybe_spawn_xp_exit();
+    if (player_in_branch(BRANCH_ABYSS) && you.depth >= 5 && you.skill_cost_level == 27)
+        you.props[ABYSS_LOITERING_TIME_KEY].get_int() += you.time_taken;
 
     actor_apply_cloud(&you);
     // Immunity due to just casting Volatile Blastmotes. Only lasts for one
@@ -1290,7 +1373,14 @@ void player_reacts()
     if (you.duration[DUR_RIME_YAK_AURA])
         frigid_walls_damage(you.time_taken);
 
+    _regenerate_hp_and_mp(you.time_taken);
+
     _decrement_durations();
+
+    if (you.attempted_attack)
+        update_parrying_status();
+    else
+        you.attribute[ATTR_SUNDERING_CHARGE] = 0;
 
     // Translocations and possibly other duration decrements can
     // escape a player from beholders and fearmongers. These should
@@ -1300,49 +1390,13 @@ void player_reacts()
 
     you.handle_constriction();
 
-    _regenerate_hp_and_mp(you.time_taken);
-
-    if (you.duration[DUR_CELEBRANT_COOLDOWN] && you.hp == you.hp_max)
-    {
-        mprf(MSGCH_DURATION, "You are ready to perform a blood rite again.");
-        you.duration[DUR_CELEBRANT_COOLDOWN] = 0;
-    }
-
-    if (you.duration[DUR_TIME_WARPED_BLOOD_COOLDOWN] && you.hp == you.hp_max)
-    {
-        // Don't print it the message if the mutation is lost
-        // before the cooldown wears off.
-        if (you.get_mutation_level(MUT_TIME_WARPED_BLOOD))
-            mprf(MSGCH_DURATION, "Your time-warped blood is ready to ripple again.");
-
-        you.duration[DUR_TIME_WARPED_BLOOD_COOLDOWN] = 0;
-    }
-
-    if (you.duration[DUR_HIVE_COOLDOWN] && you.hp == you.hp_max)
-    {
-        mprf(MSGCH_DURATION, "The buzzing within you returns to its normal rhythm.");
-        you.duration[DUR_HIVE_COOLDOWN] = 0;
-    }
-
-    if (you.duration[DUR_MEDUSA_COOLDOWN] && you.hp == you.hp_max)
-    {
-        mprf(MSGCH_DURATION, "You feel your defenses recover.");
-        you.duration[DUR_MEDUSA_COOLDOWN] = 0;
-    }
-
     if (you.duration[DUR_POISONING])
         handle_player_poison(you.time_taken);
 
-    if (you.has_mutation(MUT_TRICKSTER))
-        _handle_trickster_decay(you.time_taken);
-
     if (you.form == transformation::bat_swarm)
     {
-        if (x_chance_in_y(you.time_taken, 20))
-        {
-            const int num_clouds = 2 + (div_rand_round(get_form()->get_level(1) - 16, 4));
-            big_cloud(CLOUD_BATS, &you, you.pos(), 8, num_clouds);
-        }
+        const int num_clouds = random_range(1, 5);
+        big_cloud(CLOUD_BATS, &you, you.pos(), 8, num_clouds);
     }
 
     // safety first: make absolutely sure that there's no mimic underfoot.
@@ -1350,7 +1404,7 @@ void player_reacts()
     discover_mimic(you.pos());
 
     // Player stealth check.
-    seen_monsters_react(stealth);
+    seen_monsters_react();
 
     // XOM now ticks from here, to increase his reaction time to tension.
     if (you_worship(GOD_XOM))

@@ -22,7 +22,7 @@
 #include "directn.h"
 #include "dungeon.h"
 #include "english.h"
-#include "god-abil.h" // fedhas_passthrough for armataur charge
+#include "god-abil.h"
 #include "god-conduct.h"
 #include "item-prop.h"
 #include "items.h"
@@ -31,21 +31,20 @@
 #include "los.h"
 #include "losglobal.h"
 #include "losparam.h"
-#include "melee-attack.h" // armataur charge
+#include "melee-attack.h"
 #include "message.h"
 #include "mon-behv.h"
 #include "mon-death.h"
 #include "mon-place.h"
 #include "mon-tentacle.h"
 #include "mon-util.h"
-#include "movement.h" // armataur charge
+#include "movement.h"
 #include "nearby-danger.h"
 #include "orb.h"
 #include "output.h"
 #include "prompt.h"
 #include "religion.h"
 #include "shout.h"
-#include "spl-damage.h" // cancel_polar_vortex
 #include "spl-monench.h"
 #include "spl-util.h"
 #include "stash.h"
@@ -149,11 +148,8 @@ void uncontrolled_blink(bool override_stasis, int max_distance)
     you.stop_being_constricted(false, "blink");
 
     canned_msg(MSG_YOU_BLINK);
-    const coord_def origin = you.pos();
-    move_player_to_grid(target, false);
-    _place_tloc_cloud(origin);
-    stop_delay(true);
-
+    _place_tloc_cloud(you.pos());
+    you.move_to(target, MV_TRANSLOCATION);
     crawl_state.potential_pursuers.clear();
 }
 
@@ -204,14 +200,10 @@ spret spider_jump()
     you.stop_being_constricted(false, "jump");
 
     mpr("You jump through the air!");
-    const coord_def origin = you.pos();
-    move_player_to_grid(target, false);
-    place_cloud(CLOUD_DUST, origin, 2 + random2(3), &you);
-
-    crawl_state.potential_pursuers.clear();
-
+    place_cloud(CLOUD_DUST, you.pos(), 2 + random2(3), &you);
+    you.move_to(target, MV_DELIBERATE);
     you.increase_duration(DUR_BLINK_COOLDOWN, random_range(2, 5));
-    place_cloud(CLOUD_DUST, origin, 2 + random2(3), &you);
+    crawl_state.potential_pursuers.clear();
 
     return spret::success;
 }
@@ -367,7 +359,7 @@ void wizard_blink()
     if (cell_is_solid(beam.target))
         env.grid(beam.target) = DNGN_FLOOR;
 
-    move_player_to_grid(beam.target, false);
+    you.move_to(beam.target, MV_INTERNAL);
 }
 
 static const int HOP_FUZZ_RADIUS = 2;
@@ -489,12 +481,11 @@ spret frog_hop(bool fail, dist *target)
     }
 
     place_cloud(CLOUD_DUST, you.pos(), 2 + random2(3), &you);
-    move_player_to_grid(target->target, false);
+    you.move_to(target->target, MV_DELIBERATE);
     crawl_state.cancel_cmd_again();
     crawl_state.cancel_cmd_repeat();
     mpr("Boing!");
     you.increase_duration(DUR_NO_HOP, 12 + random2(13));
-    player_did_deliberate_movement();
 
     return spret::success; // TODO
 }
@@ -532,7 +523,7 @@ string movement_impossible_reason()
 {
     if (you.attribute[ATTR_HELD])
         return make_stringf("You cannot do that while %s.", held_status());
-    if (!you.is_motile())
+    if (you.cannot_move())
         return "You cannot move."; // MSG_CANNOT_MOVE
     return "";
 }
@@ -583,34 +574,6 @@ bool valid_electric_charge_target(const actor& agent, coord_def target, string* 
     {
         if (fail_reason)
             *fail_reason = "Why would you want to do that?";
-
-        return false;
-    }
-
-    // The remaining checks concern only the player.
-    if (agent.is_monster())
-        return true;
-
-    const monster* beholder = you.get_beholder(target);
-    if (beholder)
-    {
-        if (fail_reason)
-        {
-            *fail_reason = make_stringf("You cannot charge away from %s!",
-                                        beholder->name(DESC_THE, true).c_str());
-        }
-
-        return false;
-    }
-
-    const monster* fearmonger = you.get_fearmonger(target);
-    if (fearmonger)
-    {
-        if (fail_reason)
-        {
-            *fail_reason = make_stringf("You cannot charge closer to %s!",
-                                        fearmonger->name(DESC_THE, true).c_str());
-        }
 
         return false;
     }
@@ -669,6 +632,34 @@ coord_def get_electric_charge_landing_spot(const actor& agent, coord_def target,
                 return coord_def(0, 0);
             }
 
+            // Check that the player is allowed to move to the landing spot.
+            if (agent.is_player())
+            {
+                const monster* beholder = you.get_beholder(ray.pos());
+                if (beholder)
+                {
+                    if (fail_reason)
+                    {
+                        *fail_reason = make_stringf("You cannot charge away from %s!",
+                                                    beholder->name(DESC_THE, true).c_str());
+                    }
+
+                    return coord_def(0, 0);
+                }
+
+                const monster* fearmonger = you.get_fearmonger(ray.pos());
+                if (fearmonger)
+                {
+                    if (fail_reason)
+                    {
+                        *fail_reason = make_stringf("You cannot charge closer to %s!",
+                                                    fearmonger->name(DESC_THE, true).c_str());
+                    }
+
+                    return coord_def(0, 0);
+                }
+            }
+
             // We've already verified that our target is okay, and now we know
             // that our landing spot is also. So we should be done here.
             return ray.pos();
@@ -716,7 +707,7 @@ static bool _displace_charge_blocker(actor& agent, coord_def pos)
         if (mon->pos() != orig)
             continue;
 
-        mon->banish(&agent, "electric charge", -1, true);
+        mon->banish(&agent, "electric charge", true);
         if (!mon->alive())
             continue;
 
@@ -737,7 +728,7 @@ static bool _displace_charge_blocker(actor& agent, coord_def pos)
 spret electric_charge(actor& agent, int powc, bool fail, const coord_def &target)
 {
     // Check for unholy weapons, breadswinging, etc
-    if (agent.is_player() && !wielded_weapon_check(you.weapon(), "charge"))
+    if (agent.is_player() && !wielded_weapon_check("charge"))
         return spret::abort;
 
     coord_def dest_pos = get_electric_charge_landing_spot(agent, target);
@@ -803,43 +794,29 @@ spret electric_charge(actor& agent, int powc, bool fail, const coord_def &target
 
     // Actually move the agent
     const coord_def initial_pos = agent.pos();
-    if (agent.is_player())
-        move_player_to_grid(dest_pos, true);
-    else
-    {
-        agent.move_to_pos(dest_pos);
-        agent.apply_location_effects(orig_pos);
-    }
+    agent.move_to(dest_pos, MV_DELIBERATE | MV_TRANSLOCATION, true);
 
     noisy(4, agent.pos());
-    agent.did_deliberate_movement();
-    agent.clear_far_engulf(false, true);
 
     // Draw a cloud trail behind the charging agent
     ray_def ray;
     if (find_ray(orig_pos, target, ray, opc_solid))
         while (ray.advance() && ray.pos() != target)
-            if (!agent.is_player() || !apply_cloud_trail(ray.pos()))
+            if (!agent.is_player() || ray.pos() == dest_pos || !apply_cloud_trail(ray.pos()))
                 place_cloud(CLOUD_ELECTRICITY, ray.pos(), 2 + random2(3), &agent);
 
-    if (agent.pos() != dest_pos) // polar vortex and trap nonsense
-        return spret::success; // of a sort
-
-    // Maybe we hit a trap and something weird happened.
+    // If a blocker was displaced onto a dispersal trap, things may not be as
+    // they were when we started this, so bail out.
     if (!target_actor->alive() || !adjacent(agent.pos(), target_actor->pos()))
+    {
+        agent.finalise_movement();
         return spret::success;
+    }
 
     // manually apply noise
     // this silence check feels kludgy - perhaps could check along the whole route..?
     if (!silenced(target) && target_actor->is_monster())
         behaviour_event(target_actor->as_monster(), ME_ALERT, &agent, agent.pos()); // shout + set you as foe
-
-    // We got webbed/netted at the destination, bail on the attack.
-    if (agent.is_player() && you.attribute[ATTR_HELD])
-        return spret::success;
-    // Todo: Be more comprehensive?
-    else if (agent.is_monster() && agent.as_monster()->has_ench(ENCH_HELD))
-        return spret::success;
 
     melee_attack charge_atk(&agent, target_actor);
 
@@ -852,15 +829,16 @@ spret electric_charge(actor& agent, int powc, bool fail, const coord_def &target
 
     charge_atk.launch_attack_set();
 
-    // Monsters will already use up attack energy via the melee attack itself,
-    // so we only need to handle delay for players.
     if (agent.is_player())
     {
-        // Normally this is 10 aut (multiplied by haste, slow, etc.), but slow
-        // weapons take longer. Most relevant for low-skill players or things
-        // like the Dark Maul.
-        you.time_taken = max(you.attack_delay().roll(), player_speed());
+        // Normally casting this takes 10 aut (multiplied by haste, slow, etc.),
+        // but slow weapons take longer. Most relevant for low-skill players or
+        // things like the Dark Maul.
+        you.time_taken = max(you.melee_attack_delay().roll(), player_speed());
     }
+
+    // Finally, apply traps at the agent's destination *after* the attack.
+    agent.finalise_movement();
 
     return spret::success;
 }
@@ -914,7 +892,7 @@ spret controlled_blink(bool safe_cancel, dist *target)
     you.stop_being_constricted(false, "blink");
 
     _place_tloc_cloud(you.pos());
-    move_player_to_grid(target->target, false);
+    you.move_to(target->target, MV_DELIBERATE | MV_TRANSLOCATION);
 
     crawl_state.cancel_cmd_again();
     crawl_state.cancel_cmd_repeat();
@@ -947,7 +925,7 @@ spret cast_blink(int pow, bool fail)
     return spret::success;
 }
 
-void you_teleport()
+void you_teleport(bool is_hostile, mid_t teleportitis_source)
 {
     // [Cha] here we block teleportation, which will save the player from
     // death from read-id'ing scrolls (in sprint)
@@ -957,11 +935,16 @@ void you_teleport()
     {
         mpr("You feel strangely stable.");
         you.duration[DUR_TELEPORT] = 0;
-        you.props.erase(SJ_TELEPORTITIS_SOURCE);
+        you.props.erase(TELEPORTITIS_SOURCE);
     }
     else
     {
-        mpr("You feel strangely unstable.");
+        if (teleportitis_source == MID_PLAYER)
+            mprf(MSGCH_WARN, "You feel space start to destabilise around you!");
+        else if (is_hostile)
+            mprf(MSGCH_WARN, "You feel a distressing malevolence running through your instability!");
+        else
+            mpr("You feel strangely unstable.");
 
         int teleport_delay = 3 + random2(3);
 
@@ -977,6 +960,9 @@ void you_teleport()
         }
 
         you.set_duration(DUR_TELEPORT, teleport_delay);
+
+        if (is_hostile)
+            you.props[TELEPORTITIS_SOURCE].get_int() = teleportitis_source;
     }
 }
 
@@ -998,7 +984,7 @@ bool cell_vetoes_teleport(const coord_def cell, bool check_monsters,
     return is_feat_dangerous(env.grid(cell), true) && !wizard_tele;
 }
 
-static void _handle_teleport_update(bool large_change, const coord_def old_pos)
+static void _handle_teleport_update(bool large_change)
 {
     if (large_change)
     {
@@ -1017,52 +1003,39 @@ static void _handle_teleport_update(bool large_change, const coord_def old_pos)
                 behaviour_event(*mi, ME_EVAL);
         }
     }
-
-#ifdef USE_TILE
-    if (you.has_innate_mutation(MUT_MERTAIL))
-    {
-        const dungeon_feature_type new_grid = env.grid(you.pos());
-        const dungeon_feature_type old_grid = env.grid(old_pos);
-        if (feat_is_water(old_grid) && !feat_is_water(new_grid)
-            || !feat_is_water(old_grid) && feat_is_water(new_grid))
-        {
-            init_player_doll();
-        }
-    }
-#else
-    UNUSED(old_pos);
-#endif
-
-    you.clear_far_engulf();
 }
 
 // Not called for wizmode teleports.
-static bool _real_teleport_cleanup(coord_def oldpos, coord_def newpos)
+static bool _real_teleport_cleanup(coord_def oldpos, coord_def newpos, bool quiet = false)
 {
     bool large_change = false;
 
     if (newpos == oldpos)
-        mpr("Your surroundings flicker for a moment.");
+    {
+        if (!quiet)
+            mpr("Your surroundings flicker for a moment.");
+    }
     else if (you.see_cell(newpos))
-        mpr("Your surroundings seem slightly different.");
+    {
+        if (!quiet)
+            mpr("Your surroundings seem slightly different.");
+    }
     else
     {
-        mpr("Your surroundings suddenly seem different.");
+        if (!quiet)
+            mpr("Your surroundings suddenly seem different.");
         large_change = true;
     }
 
-    cancel_polar_vortex(true);
     _place_tloc_cloud(oldpos);
-    move_player_to_grid(newpos, false);
-    stop_delay(true);
+    you.move_to(newpos, MV_TRANSLOCATION);
 
     return large_change;
 }
 
-static bool _teleport_player(bool wizard_tele, bool teleportitis,
-                             string reason="")
+static bool _teleport_player(bool wizard_tele, string reason="")
 {
-    if (!wizard_tele && !teleportitis
+    if (!wizard_tele
         && (crawl_state.game_is_sprint() || you.no_tele())
             && !player_in_branch(BRANCH_ABYSS))
     {
@@ -1071,11 +1044,6 @@ static bool _teleport_player(bool wizard_tele, bool teleportitis,
         canned_msg(MSG_STRANGE_STASIS);
         return false;
     }
-
-    // After this point, we're guaranteed to teleport. Kill the appropriate
-    // delays. Teleportitis needs to check the target square first, though.
-    if (!teleportitis)
-        interrupt_activity(activity_interrupt::teleport);
 
     // Update what we can see at the current location as well as its stash,
     // in case something happened in the exact turn that we teleported
@@ -1134,7 +1102,7 @@ static bool _teleport_player(bool wizard_tele, bool teleportitis,
             return false;
         }
         else
-            move_player_to_grid(pos, false);
+            you.move_to(pos, MV_INTERNAL);
     }
     else
     {
@@ -1152,60 +1120,46 @@ static bool _teleport_player(bool wizard_tele, bool teleportitis,
         // it doesn't count as a random teleport for Xom purposes.
         if (tries == 0)
             return false;
-        // Teleportitis requires a monster in LOS of the new location, else
-        // it silently fails.
-        else if (teleportitis)
-        {
-            int mons_near_target = 0;
-            for (monster_near_iterator mi(newpos, LOS_NO_TRANS); mi; ++mi)
-                if (mons_is_threatening(**mi) && mons_attitude(**mi) == ATT_HOSTILE)
-                    mons_near_target++;
-            if (!mons_near_target)
-            {
-                dprf("teleportitis: no monster near target");
-                return false;
-            }
-            else if (you.no_tele())
-            {
-                if (!reason.empty())
-                    mpr(reason);
-                canned_msg(MSG_STRANGE_STASIS);
-                return false;
-            }
-            else
-            {
-                interrupt_activity(activity_interrupt::teleport);
-                if (!reason.empty())
-                    mpr(reason);
-                mprf("You are yanked towards %s nearby monster%s!",
-                     mons_near_target > 1 ? "some" : "a",
-                     mons_near_target > 1 ? "s" : "");
-            }
-        }
+
+        if (!reason.empty())
+            mpr(reason);
 
         large_change = _real_teleport_cleanup(old_pos, newpos);
     }
 
     crawl_state.potential_pursuers.clear();
 
-    _handle_teleport_update(large_change, old_pos);
+    _handle_teleport_update(large_change);
     return !wizard_tele;
 }
 
-// Teleportitis is currently balanced around it silently failing constantly.
-// For the rare circumstance we want to guarantee danger via monster teleport
-// other (and its equivalents), instead check for every monster and then every
-// place near a monster we could move to, and also bring the source of the spell
-// to you, so there's still some risk of escaping towards rats instead.
-// Worst-case calculation scenarios should be rare; the uses of it are rare.
-static bool hostile_teleport_player()
+static bool _is_hostile_teleport_target(const monster& mon)
+{
+    return mon.temp_attitude() == ATT_HOSTILE
+            && mons_is_threatening(mon)
+            && !testbits(env.pgrid(mon.pos()), FPROP_NO_TELE_INTO);
+}
+
+// Checks that there is at least one monster on the floor that the player could
+// be teleported towards.
+bool hostile_teleport_is_possible()
+{
+    for (monster_iterator mi; mi; ++mi)
+        if (_is_hostile_teleport_target(**mi))
+            return true;
+
+    return false;
+}
+
+// Used for teleportitis and soujourning bolt. Teleports the player immediately
+// to somewhere in LoS of some valid monster on the floor, optionally
+// teleporting a source monster with them.
+bool hostile_teleport_player(monster* source)
 {
     const coord_def oldpos = you.pos();
     coord_def newpos;
     bool large_change = false;
     vector<monster*> targets;
-    const mid_t source_mid = you.props[SJ_TELEPORTITIS_SOURCE].get_int();
-    monster* source = monster_by_mid(source_mid);
 
     if (you.no_tele())
     {
@@ -1217,10 +1171,8 @@ static bool hostile_teleport_player()
     // Since the source monster is coming along, don't count it as an option.
     for (monster_iterator mi; mi; ++mi)
     {
-        if (mons_is_threatening(**mi)
-            && mons_attitude(**mi) == ATT_HOSTILE
-            && !testbits(env.pgrid(mi->pos()), FPROP_NO_TELE_INTO)
-            && mi->mid != source_mid)
+        if (_is_hostile_teleport_target(**mi)
+            && (!source || *mi != source))
         {
             targets.push_back(*mi);
         }
@@ -1229,7 +1181,7 @@ static bool hostile_teleport_player()
     // If there aren't any other monsters, teleport randomly.
     bool did_teleport = false;
     if (targets.empty())
-        did_teleport = _teleport_player(false, false);
+        did_teleport = _teleport_player(false);
     else
     {
         shuffle_array(targets);
@@ -1263,7 +1215,7 @@ static bool hostile_teleport_player()
 
         // Somehow found no valid spots. Teleport randomly.
         if (newpos.origin())
-            did_teleport = _teleport_player(false, false);
+            did_teleport = _teleport_player(false);
     }
 
     if (!newpos.origin())
@@ -1275,14 +1227,13 @@ static bool hostile_teleport_player()
                 break;
         }
 
-        mprf("The spatial malevolence pulls you towards %s monster%s!",
-            mons_near_target > 1 ? "some" : "a",
-            mons_near_target > 1 ? "s" : "");
+        mprf("You are hurled through space towards %s monster%s!",
+                mons_near_target > 1 ? "some" : "a",
+                mons_near_target > 1 ? "s" : "");
 
-        interrupt_activity(activity_interrupt::teleport);
-        large_change = _real_teleport_cleanup(oldpos, newpos);
+        large_change = _real_teleport_cleanup(oldpos, newpos, true);
         crawl_state.potential_pursuers.clear();
-        _handle_teleport_update(large_change, oldpos);
+        _handle_teleport_update(large_change);
         did_teleport = true;
     }
 
@@ -1295,10 +1246,11 @@ static bool hostile_teleport_player()
                                      source_newpos, 0, &you))
         {
             _place_tloc_cloud(source->pos());
-            source->move_to_pos(source_newpos);
+            source->move_to(source_newpos, MV_DELIBERATE | MV_TRANSLOCATION, true);
             source->target = you.pos();
             mprf(MSGCH_WARN, "%s tunnels through space-time and arrives with you!",
                  source->name(DESC_THE).c_str());
+            source->finalise_movement();
         }
     }
 
@@ -1366,23 +1318,24 @@ bool you_teleport_to(const coord_def where_to, bool move_monsters)
 
     bool large_change = you.see_cell(where);
 
-    move_player_to_grid(where, false);
+    you.move_to(where, MV_TRANSLOCATION);
 
-    _handle_teleport_update(large_change, old_pos);
+    _handle_teleport_update(large_change);
     return true;
 }
 
-void you_teleport_now(bool wizard_tele, bool teleportitis, string reason)
+void you_teleport_now(bool wizard_tele, string reason)
 {
     bool randtele;
 
-    if (!wizard_tele && you.props.exists(SJ_TELEPORTITIS_SOURCE))
+    if (!wizard_tele && you.props.exists(TELEPORTITIS_SOURCE))
     {
-        randtele = hostile_teleport_player();
-        you.props.erase(SJ_TELEPORTITIS_SOURCE);
+        monster* source = monster_by_mid(you.props[TELEPORTITIS_SOURCE].get_int());
+        randtele = hostile_teleport_player(source);
+        you.props.erase(TELEPORTITIS_SOURCE);
     }
     else
-        randtele = _teleport_player(wizard_tele, teleportitis, reason);
+        randtele = _teleport_player(wizard_tele, reason);
 
     // Xom is amused by teleports that land you in a dangerous place, unless
     // the player is in the Abyss and teleported to escape from all the
@@ -1501,7 +1454,7 @@ spret cast_manifold_assault(actor& agent, int pow, bool fail, bool real,
 
     if (agent.is_player() && !katana_defender)
     {
-        if (!wielded_weapon_check(weapon))
+        if (!wielded_weapon_check())
             return spret::abort;
 
         if (player_unrand_bad_attempt(weapon, offhand, nullptr, false))
@@ -1547,30 +1500,24 @@ spret cast_manifold_assault(actor& agent, int pow, bool fail, bool real,
         if (katana_defender)
         {
             if (offhand && is_unrandom_artefact(*offhand, UNRAND_AUTUMN_KATANA))
-                atk.set_weapon(offhand, true);
+                atk.set_weapon(offhand);
             // Only the katana can attack through space!
             atk.attack();
         }
-        // Only rev up once, no matter how many targets you hit.
         else
-            atk.launch_attack_set(i == 0);
+            atk.launch_attack_set(true);
 
-        if (i == 0)
-            you.time_taken = you.attack_delay().roll();
+        if (i == 0 && agent.is_player())
+            you.time_taken = you.melee_attack_delay().roll();
 
         // Stop further attacks if we somehow died in the process.
         // (e.g. from riposte, spiny or injury mirror)
-        if (agent.is_player() && (you.hp <= 0 || you.pending_revival)
-            || agent.is_monster() && !agent.alive())
-        {
+        if (!agent.alive())
             break;
-        }
     }
 
-    // Refund duration for catalyst, but only if we cast the spell.
-    // Autumn Katana already refunded duration in melee_attack.
-    if (!katana_defender && you.duration[DUR_DETONATION_CATALYST])
-        you.duration[DUR_DETONATION_CATALYST] += you.time_taken;
+    if (agent.is_player())
+        player_attempted_attack(false);
 
     return spret::success;
 }
@@ -1597,8 +1544,7 @@ spret cast_apportation(int pow, bolt& beam, bool fail)
 
     item_def& item = env.item[item_idx];
 
-    // Nets can be apported when they have a victim trapped.
-    if (item_is_stationary(item) && !item_is_stationary_net(item))
+    if (item_is_stationary(item))
     {
         mpr("You cannot apport that!");
         return spret::abort;
@@ -1629,14 +1575,6 @@ spret cast_apportation(int pow, bolt& beam, bool fail)
                 "The Orb lets out a furious burst of light as your magic touches it!");
             start_orb_run(CHAPTER_ANGERED_PANDEMONIUM, "Now pick up the Orb and get out of here!");
         }
-    }
-
-    // If we apport a net, free the monster under it.
-    if (item_is_stationary_net(item))
-    {
-        free_stationary_net(item_idx);
-        if (monster* mons = monster_at(where))
-            mons->del_ench(ENCH_HELD, true);
     }
 
     beam.set_is_tracer(true);
@@ -1852,9 +1790,7 @@ void pull_monsters_inward(const coord_def& center, int radius)
                 if (monster_habitable_grid(mon, new_pos))
                 {
                     const coord_def old_pos = mon->pos();
-                    mon->move_to_pos(new_pos);
-                    mon->apply_location_effects(old_pos);
-                    mons_relocated(mon);
+                    mon->move_to(new_pos, MV_TRANSLOCATION);
 
                     empty[dist].erase(empty[dist].begin() + i);
 
@@ -1918,7 +1854,7 @@ spret cast_gravitas(int pow, const coord_def& where, bool fail)
             if (you.can_see(*mon))
                 mprf("%s is pinned by gravity.", mon->name(DESC_THE).c_str());
             mon->hurt(&you, dmg);
-            mon->add_ench(mon_enchant(ENCH_BOUND, 0, &you, dur));
+            mon->add_ench(mon_enchant(ENCH_BOUND, &you, dur));
             behaviour_event(mon, ME_WHACK, &you, you.pos());
         }
     }
@@ -1978,17 +1914,14 @@ bool beckon(actor &beckoned, const bolt &path)
     if (dest == beckoned.pos())
         return false;
 
-    const coord_def old_pos = beckoned.pos();
-    if (!beckoned.move_to_pos(dest))
+    if (!beckoned.move_to(dest, MV_TRANSLOCATION, true))
         return false;
 
     mprf("%s %s suddenly forward!",
          beckoned.name(DESC_THE).c_str(),
          beckoned.conj_verb("hurl").c_str());
 
-    beckoned.apply_location_effects(old_pos); // traps, etc.
-    if (beckoned.is_monster())
-        mons_relocated(beckoned.as_monster()); // cleanup tentacle segments
+    beckoned.finalise_movement();
 
     return true;
 }
@@ -2021,15 +1954,14 @@ void attract_monster(monster &mon, int max_move)
         return;
 
     const coord_def old_pos = mon.pos();
-    if (!mon.move_to_pos(ray.pos()))
+    if (!mon.move_to(ray.pos(), MV_TRANSLOCATION, true))
         return;
 
     mprf("%s is attracted toward you.", mon.name(DESC_THE).c_str());
 
     _place_tloc_cloud(old_pos);
     _place_tloc_cloud(ray.pos());
-    mon.apply_location_effects(old_pos);
-    mons_relocated(&mon);
+    mon.finalise_movement();
 }
 
 /**
@@ -2057,7 +1989,7 @@ vector<monster *> find_chaos_targets(bool just_check)
         if (!mons_is_tentacle_or_tentacle_segment(mi->type)
             && !mons_class_is_stationary(mi->type)
             && !mi->is_peripheral()
-            && !mi->friendly())
+            && !mi->wont_attack())
         {
             if (!just_check || you.can_see(**mi))
                 targets.push_back(*mi);
@@ -2092,12 +2024,12 @@ spret word_of_chaos(int pow, bool fail)
 
         blink_away(mons, &you, false);
         if (x_chance_in_y(pow, 500))
-            ensnare(mons);
+            mons->trap_in_web();
         if (x_chance_in_y(pow, 500))
             do_slow_monster(*mons, &you, 20 + random2(pow));
         if (x_chance_in_y(pow, 500))
         {
-            mons->add_ench(mon_enchant(ENCH_FEAR, 0, &you));
+            mons->add_ench(mon_enchant(ENCH_FEAR, &you));
             behaviour_event(mons, ME_SCARE, &you);
         }
     }
@@ -2332,21 +2264,19 @@ spret cast_piledriver(const coord_def& target, int pow, bool fail)
     const int move_dist = length - mons.size();
     const coord_def old_pos = you.pos();
     for (int i = (int)mons.size() - 1; i >= 0; --i)
-        mons[i]->move_to_pos(old_pos + delta * (move_dist + i + 1));
-    you.move_to_pos(old_pos + (delta * move_dist));
+        mons[i]->move_to(old_pos + delta * (move_dist + i + 1), MV_TRANSLOCATION, true);
+    you.move_to(old_pos + (delta * move_dist), MV_TRANSLOCATION | MV_DELIBERATE, true);
 
     // Apply collision damage (scaling with distance covered)
     const int dmg = piledriver_collision_damage(pow, move_dist, true).roll();
     mons.back()->collide(target + (delta * length), &you, dmg);
 
-    // Now trigger location effects (to avoid dispersal traps causing all sorts
-    // of problems with keeping the two of us together in the middle)
+    // Now finalise movement (to avoid dispersal traps causing all sorts of
+    // problems with keeping everyone together in the middle)
     for (size_t i = 0; i < mons.size(); ++i)
-    {
         if (mons[i]->alive())
-            mons[i]->apply_location_effects(target + (delta * i));
-    }
-    you.apply_location_effects(old_pos);
+            mons[i]->finalise_movement();
+    you.finalise_movement();
 
     return spret::success;
 }
@@ -2371,7 +2301,7 @@ static void _maybe_penance_for_collision(god_conduct_trigger conducts[3], actor&
 
 static void _push_actor(actor& victim, coord_def dir, int dist, int pow)
 {
-    const bool immune = never_harm_monster(&you, victim.as_monster());
+    const bool immune = !could_harm(&you, &victim);
 
     god_conduct_trigger conducts[3];
 
@@ -2407,15 +2337,11 @@ static void _push_actor(actor& victim, coord_def dir, int dist, int pow)
         else if (!victim.is_habitable(next_pos))
             break;
         else
-            victim.move_to_pos(next_pos);
+            victim.move_to(next_pos, MV_TRANSLOCATION, true);
     }
 
-    if (starting_pos != victim.pos())
-    {
-        victim.apply_location_effects(starting_pos);
-        if (victim.is_monster())
-            mons_relocated(victim.as_monster());
-    }
+    // Apply post-move effects at the end of all movement.
+    victim.finalise_movement();
 }
 
 spret cast_gavotte(int pow, const coord_def dir, bool fail)
@@ -2633,10 +2559,7 @@ spret do_bestial_takedown(coord_def target)
 
     mprf("You pounce on %s with bestial fury!", targ->name(DESC_THE).c_str());
 
-    const coord_def old_pos = you.pos();
-    you.moveto(landing, true);
-    viewwindow();
-    update_screen();
+    you.move_to(landing, MV_DELIBERATE, true);
 
     melee_attack atk(&you, targ);
     atk.dmg_mult = get_form()->get_takedown_multiplier();
@@ -2644,10 +2567,9 @@ spret do_bestial_takedown(coord_def target)
     atk.is_bestial_takedown = true;
     atk.launch_attack_set();
 
-    you.time_taken = you.attack_delay().roll();
+    you.time_taken = you.melee_attack_delay().roll();
 
-    you.did_deliberate_movement();
-    you.apply_location_effects(old_pos);
+    you.finalise_movement();
     noisy(5, you.pos(), MID_PLAYER);
 
     return spret::success;

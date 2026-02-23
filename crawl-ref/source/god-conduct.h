@@ -17,7 +17,6 @@ struct god_conduct_trigger
     int pgain;
     bool known;
     unique_ptr<monster> victim;
-    bool did_sanctuary;
 
     god_conduct_trigger(conduct_type c = NUM_CONDUCTS,
                         int pg = 0,
@@ -49,3 +48,4 @@ conduct_type god_hates_item_handling(const item_def& item);
 
 string get_god_likes(god_type which_god);
 string get_god_dislikes(god_type which_god);
+string conduct_description(conduct_type conduct);

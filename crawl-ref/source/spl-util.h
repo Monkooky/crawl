@@ -84,7 +84,6 @@ tileidx_t get_spell_tile(spell_type which_spell);
 
 bool spell_is_direct_explosion(spell_type spell);
 bool spell_harms_target(spell_type spell);
-bool spell_harms_area(spell_type spell);
 bool spell_is_direct_attack(spell_type spell);
 int spell_levels_required(spell_type which_spell);
 
@@ -149,7 +148,10 @@ bool spell_has_variable_range(spell_type spell);
 
 bool spell_can_be_enkindled(spell_type spell);
 
+bool is_monster_net_escape_spell(spell_type spell);
+
 bool spell_removed(spell_type spell);
+bool spell_is_monster_only(spell_type spell);
 #if TAG_MAJOR_VERSION == 34
 bool spell_was_form(spell_type spell);
 #endif

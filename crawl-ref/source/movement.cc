@@ -13,6 +13,7 @@
 #include "movement.h"
 
 #include "abyss.h"
+#include "act-iter.h"
 #include "art-enum.h"
 #include "bloodspatter.h"
 #include "cloud.h"
@@ -50,44 +51,44 @@
 #include "spl-summoning.h"
 #include "target-compass.h"
 #include "terrain.h"
+#include "throw.h"
 #include "traps.h"
 #include "travel.h"
 #include "travel-open-doors-type.h"
 #include "transform.h"
 #include "unwind.h"
+#include "viewchar.h"
 #include "xom.h" // XOM_CLOUD_TRAIL_TYPE_KEY
 
-static void _apply_move_time_taken();
-
-// Swap monster to this location. Player is swapped elsewhere.
-// Moves the monster into position, but does not move the player
-// or apply location effects: the latter should happen after the
-// player is moved.
-static void _swap_places(monster* mons, const coord_def &loc)
+// Move a monster to a given location, in preparation for the player moving to
+// their current location themselves.
+//
+// This position is usually the player's current position, but in some cases
+// may not be (for instance, if the monster being swapped into cannot occupy
+// the player's previous location, it may be pushed elsewhere instead.
+//
+// Note: This does not apply movement finalisation, relying on the caller to do
+//       this later themselves!
+void player_displace_monster(monster* mons, const coord_def &loc)
 {
     ASSERT(map_bounds(loc));
     ASSERT(monster_habitable_grid(mons, loc));
+    ASSERT(!monster_at(loc));
 
-    if (monster_at(loc))
-    {
-        mpr("Something prevents you from swapping places.");
-        return;
-    }
-
-    // Friendly seekers dissipate instead of damaging the player.
-    if (mons_is_seeker(*mons))
+    // Friendly seekers dissipate when the player swaps into them.
+    if (loc != you.pos())
+        mprf("You push %s out of the way.", mons->name(DESC_THE).c_str());
+    else if (mons_is_seeker(*mons))
     {
         simple_monster_message(*mons, " dissipates!", false,
                                MSGCH_MONSTER_DAMAGE, MDAM_DEAD);
         monster_die(*mons, KILL_RESET, NON_MONSTER, true);
         return;
     }
+    else
+        mprf("You swap places with %s.", mons->name(DESC_THE).c_str());
 
-    mpr("You swap places.");
-
-    mons->move_to_pos(loc, true, true);
-
-    return;
+    mons->move_to(loc, MV_ALLOW_OVERLAP, true);
 }
 
 // Check squares adjacent to player for given feature and return how
@@ -122,12 +123,12 @@ static int _check_adjacent(dungeon_feature_type feat, coord_def& delta)
     return num;
 }
 
-static bool _cancel_barbed_move(bool rampaging)
+static bool _cancel_barbed_move()
 {
-    if (you.duration[DUR_BARBS] && !you.props.exists(BARBS_MOVE_KEY))
+    if (you.duration[DUR_BARBS] && !you.props.exists(BARBS_MOVE_KEY)
+        && !crawl_state.disables[DIS_CONFIRMATIONS])
     {
         std::string prompt = "The barbs in your skin will harm you if you move.";
-        prompt += rampaging ? " Rampaging like this could really hurt!" : "";
         prompt += " Continue?";
         if (!yesno(prompt.c_str(), false, 'n'))
         {
@@ -141,7 +142,7 @@ static bool _cancel_barbed_move(bool rampaging)
     return false;
 }
 
-static void _apply_barbs_damage(bool rampaging)
+static void _apply_barbs_damage()
 {
     if (you.duration[DUR_BARBS])
     {
@@ -155,15 +156,15 @@ static void _apply_barbs_damage(bool rampaging)
             extract_barbs("The barbed spikes snap loose.");
         // But if that failed to end the effect, duration stays the same.
         if (you.duration[DUR_BARBS])
-            you.duration[DUR_BARBS] += (rampaging ? 0 : you.time_taken);
+            you.duration[DUR_BARBS] += (you.time_taken);
     }
 }
 
 // For effects that should happen whenever the player actively moves with their
 // limbs, but NOT if the player blinks/teleports or is otherwise displaced.
-void player_did_deliberate_movement(bool rampaging)
+void player_did_deliberate_movement()
 {
-    _apply_barbs_damage(rampaging);
+    _apply_barbs_damage();
     shake_off_sticky_flame();
 }
 
@@ -195,9 +196,9 @@ static bool _cancel_ice_move()
     return false;
 }
 
-bool cancel_harmful_move(bool physically, bool rampaging)
+bool cancel_harmful_move(bool physically)
 {
-    return physically ? (_cancel_barbed_move(rampaging) || _cancel_ice_move())
+    return physically ? (_cancel_barbed_move() || _cancel_ice_move())
         : _cancel_ice_move();
 }
 
@@ -217,13 +218,6 @@ void remove_ice_movement()
         end_frozen_ramparts();
         mprf(MSGCH_DURATION, "The frozen ramparts melt away as you move.");
     }
-}
-
-static void _clear_constriction_data()
-{
-    you.stop_directly_constricting_all(true);
-    if (you.get_constrict_type() == CONSTRICT_MELEE)
-        you.stop_being_constricted();
 }
 
 static void _mark_potential_pursuers(coord_def new_pos)
@@ -258,7 +252,7 @@ bool apply_cloud_trail(const coord_def old_pos)
     if (you.duration[DUR_CLOUD_TRAIL])
     {
         if (cell_is_solid(old_pos))
-            ASSERT(you.wizmode_teleported_into_rock);
+            return false;
         else
         {
             auto cloud = static_cast<cloud_type>(
@@ -294,11 +288,7 @@ bool cancel_confused_move(bool stationary)
         {
             string suffix, adj;
             monster *mons = monster_at(*ai);
-            if (mons
-                && (stationary
-                    || !(is_sanctuary(you.pos()) && is_sanctuary(mons->pos()))
-                       && !fedhas_passthrough(mons))
-                && bad_attack(mons, adj, suffix, penance))
+            if (mons && bad_attack(mons, adj, suffix, penance))
             {
                 bad_mons = mons;
                 bad_suff = suffix;
@@ -324,9 +314,7 @@ bool cancel_confused_move(bool stationary)
         }
         else
         {
-            string name = bad_mons->name(DESC_PLAIN);
-            if (starts_with(name, "the "))
-               name.erase(0, 4);
+            string name = remove_prepended_the(bad_mons->name(DESC_PLAIN));
             if (!starts_with(bad_adj, "your"))
                bad_adj = "the " + bad_adj;
             prompt += bad_adj + name + bad_suff;
@@ -355,9 +343,9 @@ void open_door_action(coord_def move)
     ASSERT(!crawl_state.game_is_arena());
     ASSERT(!crawl_state.arena_suspended);
 
-    if (you.attribute[ATTR_HELD])
+    if (you.caught())
     {
-        free_self_from_net();
+        you.struggle_against_net();
         you.turn_is_over = true;
         return;
     }
@@ -533,9 +521,14 @@ bool prompt_dangerous_portal(dungeon_feature_type ftype)
     {
     case DNGN_ENTER_PANDEMONIUM:
     case DNGN_ENTER_ZIGGURAT:
-    case DNGN_ENTER_ABYSS:
         return yesno("If you enter this portal you might not be able to return "
                      "immediately. Continue?", false, 'n');
+    case DNGN_ENTER_ABYSS:
+    {
+        return yesno(make_stringf("If you enter this portal you could be pulled as "
+                     "deep as Abyss:%d and might not be able to return immediately. "
+                     "Continue?", abyss_default_depth(true)).c_str(), false, 'n');
+    }
     default:
         return true;
     }
@@ -554,9 +547,8 @@ bool prompt_descent_shortcut(dungeon_feature_type ftype)
 
 static coord_def _rampage_destination(coord_def move, monster* target)
 {
-    if (!you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS))
-        return you.pos() + move;
-    const int dist = grid_distance(you.pos(), target->pos()) - 1;
+    const int dist = min(grid_distance(you.pos(), target->pos()) - 1,
+                         you.rampaging());
     return you.pos() + move * dist;
 }
 
@@ -569,7 +561,7 @@ monster* get_rampage_target(coord_def move)
     // Don't rampage if the player has status effects that should prevent it.
     if (you.is_nervous()
         || you.confused()
-        || !you.is_motile()
+        || you.cannot_move()
         || you.is_constricted())
     {
         return nullptr;
@@ -631,175 +623,7 @@ monster* get_rampage_target(coord_def move)
     return nullptr;
 }
 
-static bool _check_rampage(bool attacking, coord_def rampage_destination,
-                           coord_def rampage_target, const string& noun)
-{
-    if (attacking)
-    {
-        return check_moveto(rampage_destination, noun)
-               && wielded_weapon_check(you.weapon(), noun + " and attack");
-    }
-    // You won't always move over rampage_destination, sometimes an invisible
-    // monster will get in the way and stop you on it. But warning about this
-    // seems more annoying than useful --Wizard Ike
-    return check_move_over(rampage_destination, noun)
-           && check_moveto(rampage_target, noun);
-}
-
-/**
- * Rampages the player toward a hostile monster, if one exists in the direction
- * of the move input. Invalid things along the rampage path cancel the rampage.
- *
- * @param move  A relative coord_def of the player's CMD_MOVE input,
- *              as called by move_player_action().
- * @return      spret::fail if something invalid prevented the rampage,
- *              spret::abort if a player prompt response should cancel the move
- *              entirely,
- *              spret::success if the rampage occurred.
- */
-static spret _rampage_forward(coord_def move)
-{
-    ASSERT(!crawl_state.game_is_arena());
-
-    const bool enhanced = you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS);
-    const bool rolling = you.has_mutation(MUT_ROLLPAGE);
-    const string noun = enhanced ? "stride" :
-                         rolling ? "roll" : "rampage";
-    const string verb = enhanced ? "striding" :
-                         rolling ? "rolling" : "rampaging";
-
-    if (crawl_state.is_replaying_keys())
-    {
-        crawl_state.cancel_cmd_all("You can't repeat " + verb + ".");
-        return spret::abort;
-    }
-
-    monster* mon_target = get_rampage_target(move);
-    if (!mon_target)
-        return spret::fail;
-
-    const coord_def rampage_destination = _rampage_destination(move, mon_target);
-    const coord_def rampage_target = rampage_destination + move;
-
-    // Will the second move be an attack?
-    const bool attacking = mon_target->pos() == rampage_target;
-
-    // Don't rampage if the player's tile is being targeted, somehow.
-    if (rampage_destination == you.pos())
-        return spret::fail;
-
-    // Abort if the player answers no to
-    // * barbs damaging move prompt
-    // * breaking ice spells prompt
-    // * dangerous terrain/trap/cloud/exclusion prompt
-    // * weapon check prompts;
-    // messaging for this is handled by check_moveto().
-    if (!_check_rampage(attacking, rampage_destination, rampage_target, noun))
-    {
-        stop_running();
-        you.turn_is_over = false;
-        return spret::abort;
-    }
-
-    // Do allow rampaging on top of Fedhas plants,
-    const monster* mons = monster_at(rampage_destination);
-    bool fedhas_move = false;
-    if (mons && fedhas_passthrough(mons))
-        fedhas_move = true;
-    // but otherwise, don't rampage if it would land us on top of a monster,
-    else if (mons)
-    {
-        if (!you.can_see(*mons))
-        {
-            // .. and if a mons was in the way and invisible, notify the player.
-            clear_messages();
-            mprf("Something unexpectedly blocks you, preventing you from %s!",
-                 verb.c_str());
-        }
-        return spret::fail;
-    }
-
-    // We've passed the validity checks, go ahead and rampage.
-    const coord_def old_pos = you.pos();
-
-    clear_messages();
-    const monster* current = monster_at(you.pos());
-    if (fedhas_move && (!current || !fedhas_passthrough(current)))
-    {
-        mprf("You %s quickly through the %s towards %s!",
-             noun.c_str(),
-             mons_genus(mons->type) == MONS_FUNGUS ? "fungus" : "plants",
-             mon_target->name(DESC_THE, true).c_str());
-    }
-    else
-    {
-        mprf("You %s towards %s!",
-             noun.c_str(),
-             mon_target->name(DESC_THE, true).c_str());
-    }
-
-    // First, apply any necessary pre-move effects:
-    _clear_constriction_data();
-    _mark_potential_pursuers(rampage_destination);
-
-    // stepped = true, we're flavouring this as movement, not a blink.
-    move_player_to_grid(rampage_destination, true);
-
-    // Verify the new position is valid, in case something unexpected happened.
-    ASSERT(!in_bounds(you.pos()) || !cell_is_solid(you.pos())
-            || you.wizmode_teleported_into_rock);
-
-    you.clear_far_engulf(false, true);
-    // No full-LOS stabbing.
-    if (enhanced)
-        behaviour_event(mon_target, ME_ALERT, &you, you.pos());
-
-    // Lastly, apply post-move effects unhandled by move_player_to_grid().
-    apply_rampage_heal();
-    player_did_deliberate_movement(true);
-    remove_ice_movement();
-    you.clear_far_engulf(false, true);
-    apply_cloud_trail(old_pos);
-
-    // If there is somehow an active run delay here, update the travel trail.
-    if (you_are_delayed() && current_delay()->is_run())
-        env.travel_trail.push_back(you.pos());
-
-    return spret::success;
-}
-
-static void _apply_move_time_taken()
-{
-    you.time_taken *= player_movement_speed();
-    you.time_taken = div_rand_round(you.time_taken, 10);
-    if (you.duration[DUR_NO_HOP])
-        you.duration[DUR_NO_HOP] += you.time_taken;
-    if (you.duration[DUR_MESMERISM_COOLDOWN])
-        you.duration[DUR_MESMERISM_COOLDOWN] += you.time_taken;
-}
-
-// The "first square" of rampaging ordinarily has no time cost, and the "second
-// square" is where its move delay or attack delay would be applied. If the
-// player begins a rampage, and then cancels the second move, as through a
-// prompt, we have to ensure they don't get zero-cost movement out of it. Here
-// we apply movedelay, end the turn, and call relevant post-move effects.
-static void _finalize_cancelled_rampage_move()
-{
-    _apply_move_time_taken();
-    you.turn_is_over = true;
-
-    if (player_in_branch(BRANCH_ABYSS))
-        maybe_shift_abyss_around_player();
-
-    you.apply_berserk_penalty = true;
-
-    // Rampaging prevents Wu Jian attacks, so we do not process them
-    // here
-    update_acrobat_status();
-}
-
-static void _handle_trying_to_move_into_unpassable_terrain(coord_def targ,
-                                                           bool digging)
+static void _handle_trying_to_move_into_unpassable_terrain(coord_def targ)
 {
     if (env.grid(targ) == DNGN_OPEN_SEA)
         mpr("The ferocious winds and tides of the open sea thwart your progress.");
@@ -807,7 +631,7 @@ static void _handle_trying_to_move_into_unpassable_terrain(coord_def targ,
         mpr("The endless sea of lava is not a nice place.");
     else if (feat_is_tree(env.grid(targ)) && you_worship(GOD_FEDHAS))
     {
-        if (digging)
+        if (you.digging)
             mpr("You cannot dig through the dense trees.");
         else
             mpr("You cannot walk through the dense trees.");
@@ -815,11 +639,11 @@ static void _handle_trying_to_move_into_unpassable_terrain(coord_def targ,
     else if (env.grid(targ) == DNGN_MALIGN_GATEWAY)
         mpr("The malign portal rejects you as you step towards it.");
     // Why isn't the border permarock?
-    else if (digging && !in_bounds(targ))
+    else if (you.digging && !in_bounds(targ))
         mpr("This wall is too hard to dig through.");
-    else if (digging && env.grid(targ) == DNGN_SLIMY_WALL)
+    else if (you.digging && env.grid(targ) == DNGN_SLIMY_WALL)
         mpr("Trying to dig through that would dissolve your mandibles.");
-    else if (digging)
+    else if (you.digging)
         mpr("You can't dig through that.");
     else if (you.current_vision == 0)
         mpr("You feel something solid in that direction.");
@@ -837,435 +661,565 @@ static void _handle_trying_to_move_into_unpassable_terrain(coord_def targ,
     }
 }
 
-// Called when the player moves by walking/running. Also calls attack
-// function etc when necessary.
-void move_player_action(coord_def move)
+// For confused players, adjust a passed movement direction randomly (with
+// appropriate warning prompts) and possibly abort entirely if they try to
+// stumble into a wall or lava).
+// Returns true if movement handling should continue after this point.
+static bool _adjust_confused_movement(coord_def& move)
 {
-    ASSERT(!crawl_state.game_is_arena() && !crawl_state.arena_suspended);
-
-    bool attacking = false;
-    bool moving = true;         // used to prevent eventual movement (swap)
-    bool swap = false;
-
-    ASSERT(!in_bounds(you.pos()) || !cell_is_solid(you.pos())
-           || you.wizmode_teleported_into_rock);
-
-    if (you.attribute[ATTR_HELD])
+    if (you.cannot_move())
     {
-        free_self_from_net();
-        you.turn_is_over = true;
-        return;
+        // Don't choose a random location to try to attack into - allows
+        // abuse, since trying to move (not attack) takes no time, and
+        // shouldn't. Just force confused trees to use ctrl.
+        mpr("You cannot move. (Use ctrl+direction or * direction to "
+            "attack while stationary and confused.)");
+        return false;
     }
 
-    coord_def initial_position = you.pos();
+    if (cancel_confused_move(false))
+        return false;
 
-    // When confused, sometimes make a random move.
-    if (you.confused())
+    if (cancel_harmful_move())
+        return false;
+
+    if (!one_chance_in(3))
     {
-        if (!you.is_motile())
+        move.x = random2(3) - 1;
+        move.y = random2(3) - 1;
+        if (move.origin())
         {
-            // Don't choose a random location to try to attack into - allows
-            // abuse, since trying to move (not attack) takes no time, and
-            // shouldn't. Just force confused trees to use ctrl.
-            mpr("You cannot move. (Use ctrl+direction or * direction to "
-                "attack while stationary and confused.)");
-            return;
-        }
-
-        if (cancel_confused_move(false))
-            return;
-
-        if (cancel_harmful_move())
-            return;
-
-        if (!one_chance_in(3))
-        {
-            move.x = random2(3) - 1;
-            move.y = random2(3) - 1;
-            if (move.origin())
-            {
-                mpr("You're too confused to move!");
-                you.apply_berserk_penalty = true;
-                you.turn_is_over = true;
-                return;
-            }
-        }
-
-        const coord_def new_targ = you.pos() + move;
-        if (!in_bounds(new_targ) || !you.can_pass_through(new_targ))
-        {
+            mpr("You're too confused to move!");
             you.turn_is_over = true;
-            if (you.digging) // no actual damage
-            {
-                mprf("Your mandibles retract as you bump into %s.",
-                     feature_description_at(new_targ, false,
-                                            DESC_THE).c_str());
-                you.digging = false;
-            }
-            else
-            {
-                mprf("You bump into %s.",
-                     feature_description_at(new_targ, false,
-                                            DESC_THE).c_str());
-            }
-            you.apply_berserk_penalty = true;
             crawl_state.cancel_cmd_repeat();
-
-            return;
+            return false;
         }
     }
 
-    bool rampaged = false;
-    bool did_wu_jian_attack = false;
+    const coord_def new_targ = you.pos() + move;
 
-    if (you.rampaging())
+    // Test if our new location is somewhere we cannot move, and abort early if so.
+    if (!in_bounds(new_targ) || !you.can_pass_through(new_targ))
     {
-        const monster *rampage_targ = get_rampage_target(move);
-        switch (_rampage_forward(move))
-        {
-            // Cancel the move entirely if rampage was aborted from a prompt.
-            case spret::abort:
-                return;
-
-            case spret::success:
-                rampaged = true;
-                if (you_worship(GOD_WU_JIAN)
-                    && wu_jian_post_move_effects(false, initial_position))
-                {
-                    did_wu_jian_attack = true;
-                    // If you kill something with a lunge, don't continue
-                    // rampaging into its space. That could be a nasty surprise
-                    // for players who land on traps, clouds, exclusions, etc,
-                    // even if we prevented moving into solid terrain or lava.
-                    if (rampage_targ && !rampage_targ->alive())
-                    {
-                        you.time_taken = you.attack_delay().roll();
-                        you.turn_is_over = true;
-                        you.berserk_penalty = 0;
-                        wu_jian_trigger_serpents_lash(false, initial_position);
-                        return;
-                    }
-                }
-                // If we've rampaged, reset initial_position for the second
-                // move.
-                initial_position = you.pos();
-                break;
-            case spret::fail:
-            default:
-                break;
-        }
+        mprf("You bump into %s.",
+                    feature_description_at(new_targ, false,
+                                        DESC_THE).c_str());
+        you.turn_is_over = true;
+        crawl_state.cancel_cmd_repeat();
+        return false;
+    }
+    else if (is_feat_dangerous(env.grid(new_targ)))
+    {
+        mprf("You nearly stumble into %s!",
+                feature_description_at(new_targ, false, DESC_THE).c_str());
+        you.turn_is_over = true;
+        crawl_state.cancel_cmd_repeat();
+        return false;
     }
 
-    const bool was_digging = you.digging;
+    // Otherwise, we're good to attempt stumbling this way.
+    return true;
+}
 
-    const coord_def targ = you.pos() + move;
-    // You can't walk out of bounds!
-    if (!in_bounds(targ))
+static string _get_move_verb(bool is_rampage)
+{
+    if (is_rampage)
     {
-        you.digging = false;
-        _handle_trying_to_move_into_unpassable_terrain(targ, was_digging);
-        return;
-    }
-
-    // XX generalize?
-    const string walkverb = you.airborne()                     ? "fly"
-                          : you.swimming()                     ? "swim"
-                          : you.form == transformation::serpent ? "slither"
-                          : you.form != transformation::none   ? "walk" // XX
-                          : walk_verb_to_present(lowercase_first(species::walking_verb(you.species)));
-
-    monster* targ_monst = monster_at(targ);
-    if (fedhas_passthrough(targ_monst) && you.is_motile())
-    {
-        // Moving on a plant takes 1.5 x normal move delay. We
-        // will print a message about it but only when moving
-        // from open space->plant (hopefully this will cut down
-        // on the message spam).
-        you.time_taken = div_rand_round(you.time_taken * 3, 2);
-
-        monster* current = monster_at(you.pos());
-        if (!current || !fedhas_passthrough(current))
-        {
-            // Probably need a better message. -cao
-            mprf("You %s carefully through the %s.", walkverb.c_str(),
-                 mons_genus(targ_monst->type) == MONS_FUNGUS ? "fungus"
-                                                             : "plants");
-        }
-        targ_monst = nullptr;
-    }
-
-    bool targ_pass = you.can_pass_through(targ) && you.is_motile();
-
-    if (you.digging)
-    {
-        if (feat_is_diggable(env.grid(targ)) && env.grid(targ) != DNGN_SLIMY_WALL)
-            targ_pass = true;
+        if (you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS))
+            return "stride";
+        else if (you.has_mutation(MUT_STAMPEDE))
+            return "stampede";
         else
-        {
-            // moving or attacking ends dig
-            you.digging = false;
-
-            if (!feat_is_solid(env.grid(targ)))
-                mpr("You retract your mandibles.");
-        }
+            return "rampage";
     }
 
-    // You can swap places with a friendly or good neutral monster if
-    // you're not confused, or even with hostiles if both of you are inside
-    // a sanctuary.
-    const bool try_to_swap = targ_monst
-                             && (targ_monst->wont_attack()
-                                    && !you.confused()
-                                 || is_sanctuary(you.pos())
-                                    && is_sanctuary(targ));
+    return you.airborne()                          ? "fly"
+           : you.swimming()                        ? "swim"
+           : you.form == transformation::serpent   ? "slither"
+           : you.form != transformation::none      ? "walk" // XX
+           : walk_verb_to_present(lowercase_first(species::walking_verb(you.species)));
+}
 
-    // You cannot move away from a siren but you CAN fight monsters on
-    // neighbouring squares.
-    monster* beholder = nullptr;
-    if (!you.confused())
-        beholder = you.get_beholder(targ);
-
-    // You cannot move closer to a fear monger.
-    monster *fmonger = nullptr;
-    if (!you.confused())
-        fmonger = you.get_fearmonger(targ);
-
-    if (!rampaged && you.running.check_stop_running())
+void east_wind_expose_monster(monster* mon)
+{
+    if (!mon->is_firewood() && !mon->wont_attack())
     {
-        // [ds] Do we need this? Shouldn't it be false to start with?
-        you.turn_is_over = false;
-        return;
+        if (!mon->has_ench(ENCH_EXPOSED) && you.can_see(*mon))
+            mprf("A bitter wind exposes %s.", mon->name(DESC_THE).c_str());
+        mon->add_ench(mon_enchant(ENCH_EXPOSED, &you, random_range(30, 50)));
+    }
+}
+
+static void _do_east_wind(int num_steps)
+{
+    for (radius_iterator ri(you.pos(), 2, C_SQUARE, LOS_NO_TRANS, true); ri; ++ri)
+        if (monster* mon = monster_at(*ri))
+            east_wind_expose_monster(mon);
+
+    you.magic_points_regeneration += you.max_magic_points * num_steps * random_range(5, 7);
+    you.did_east_wind = 2; // One stage expires immediately, so that the next can remain visually.
+}
+
+static bool _cannot_step_into(const coord_def& pos)
+{
+    return !you.can_pass_through(pos)
+            && (!you.digging
+                || !in_bounds(pos)
+                || !feat_is_diggable(env.grid(pos))
+                || env.grid(pos) == DNGN_SLIMY_WALL);
+}
+
+static vector<monster*> _get_stampede_line(const coord_def& start, const coord_def& delta, bool only_known = false)
+{
+    // Iterate to find how many connected monsters are in a row that the player can see.
+    vector<monster*> move_targets;
+    coord_def pos = start;
+    while (monster* mon = monster_at(pos))
+    {
+        // Don't count things outside the player's LoS if checking known monsters.
+        if (only_known && !you.can_see(*mon))
+            break;
+
+        // Can't move anything with a stationary monster in its cluster.
+        if (mon->is_stationary())
+            return vector<monster*>();
+
+        // Add this monster to the line and advance one step
+        move_targets.push_back(mon);
+        pos += delta;
     }
 
+    return move_targets;
+}
+
+// Determine how many tiles the player would expect to move if they stampeded now
+static int _stampede_move_check(const coord_def& delta)
+{
+    if (!you.duration[DUR_STAMPEDE])
+        return 0;
+
+    // If the player can't move into the next tile, bail early.
+    if (is_feat_dangerous(env.grid(you.pos() + delta)))
+        return 0;
+
+    vector<monster*> move_targets = _get_stampede_line(you.pos() + delta, delta, true);
+
+    if (move_targets.empty())
+        return 0;
+
+    for (monster* mon : move_targets)
+        if (!monster_habitable_grid(mon, mon->pos() + delta))
+            return 0;
+
+    // Now we know we can stampede at least one tile. Check if we can stampede 2.
+
+    // Only bother checking the second step if the player can step there.
+    if (is_feat_dangerous(env.grid(you.pos() + delta + delta)))
+        return 1;
+
+    vector<monster*> second_move_targets = _get_stampede_line(move_targets.back()->pos() + delta + delta, delta, true);
+
+    for (monster* mon : second_move_targets)
+        if (!monster_habitable_grid(mon, mon->pos() + delta))
+            return 1;
+    for (monster* mon : move_targets)
+        if (!monster_habitable_grid(mon, mon->pos() + delta + delta))
+            return 1;
+
+    return 2;
+}
+
+static bool _try_stampede(const coord_def& target)
+{
+    if (you.is_constricted() || you.cannot_move() || you.caught())
+        return false;
+
+    const coord_def delta = target - you.pos();
+    vector<monster*> move_targets = _get_stampede_line(target, delta);
+
+    // Check if we have targets that can be pushed.
+    if (move_targets.empty())
+        return false;
+    if (is_feat_dangerous(env.grid(you.pos() + delta)) || !you.can_pass_through(you.pos() + delta))
+        return false;
+    for (monster* mon : move_targets)
+        if (!monster_habitable_grid(mon, mon->pos() + delta))
+            return false;
+
+    // Now move everyone (and ourselves).
+    const coord_def old_pos = you.pos();
+    for (int i = (int)move_targets.size() - 1; i >= 0; --i)
+        move_targets[i]->move_to(old_pos + delta * (i + 2), MV_DEFAULT, true);
+    you.move_to(old_pos + delta, MV_DELIBERATE, true);
+
+    // Now finalise movement (to avoid dispersal traps causing all sorts of
+    // problems with keeping everyone together in the middle)
+    for (size_t i = 0; i < move_targets.size(); ++i)
+        if (move_targets[i]->alive())
+            move_targets[i]->finalise_movement();
+    you.finalise_movement();
+
+    return true;
+}
+
+// Handles the player trying to move/attack/swap into a given location.
+// Returns true if handling of further steps should continue after this.
+static bool _handle_player_step(const coord_def& targ, int& delay, bool rampaging,
+                                bool& did_stampede,
+                                bool& did_move, bool& did_attack, bool& did_open_door)
+{
+    const coord_def initial_pos = you.pos();
+    monster* mon = monster_at(targ);
     coord_def mon_swap_dest;
+    bool fedhas_move = false;
 
-    if (targ_monst)
+    // First, check for fighting a monster.
+    if (mon)
     {
-        if (try_to_swap
-            && targ_monst->type == MONS_CLOCKWORK_BEE_INACTIVE)
+        if (mon->temp_attitude() == ATT_NEUTRAL
+            && !mon->has_ench(ENCH_FRENZIED)
+            && !you.confused()
+            && mon->visible_to(&you))
         {
-            if (clockwork_bee_recharge(you, *targ_monst))
-                you.turn_is_over = false;
-
-            return;
+            simple_monster_message(*mon, " refuses to make way for you. "
+                            "(Use ctrl+direction or * direction to attack.)");
+            return false;
         }
 
-        if (try_to_swap && !beholder && !fmonger)
+        // Attempt to attack the monster.
+        if (!mon->wont_attack() || you.confused())
         {
-            if (swap_check(targ_monst, mon_swap_dest))
-                swap = true;
-            else
+            if (you.duration[DUR_STAMPEDE] && !you.confused() && !rampaging
+                && _try_stampede(targ))
+            {
+                // Accumulate cost of moving across terrain, then average it.
+                int stampede_delay = player_movement_speed();
+                // Move a second time (assuming we ended up where we expected to).
+                if (you.pos() == targ && _try_stampede(you.pos() + (targ - initial_pos)))
+                    stampede_delay = div_rand_round(stampede_delay + player_movement_speed(), 2);
+                did_move = true;
+                did_stampede = true;
+                delay += stampede_delay;
+
+                // Check that the target we were trampling still there.
+                if (!mon || (mon->pos() - you.pos()) != (targ - initial_pos))
+                    return false;
+            }
+            if (!player_fight(mon, rampaging))
             {
                 stop_running();
-                moving = false;
-            }
-        }
-        else if (targ_monst->temp_attitude() == ATT_NEUTRAL
-                 && !targ_monst->has_ench(ENCH_FRENZIED)
-                 && !you.confused()
-                 && targ_monst->visible_to(&you))
-        {
-            simple_monster_message(*targ_monst, " refuses to make way for you. "
-                              "(Use ctrl+direction or * direction to attack.)");
-            you.turn_is_over = false;
-            return;
-        }
-        else if (!try_to_swap) // attack!
-        {
-            // Don't allow the player to freely locate invisible monsters
-            // with confirmation prompts.
-            if (!rampaged && !you.can_see(*targ_monst) && !you.is_motile())
-            {
-                canned_msg(MSG_CANNOT_MOVE);
-                you.turn_is_over = false;
-                return;
-            }
-            // Rampaging forcibly initiates the attack, but the attack
-            // can still be cancelled.
-            if (!rampaged && !you.can_see(*targ_monst)
-                && !you.confused()
-                && !check_moveto(targ, walkverb)
-                // Attack cancelled by fight_melee
-                || !fight_melee(&you, targ_monst))
-            {
-                stop_running();
-                // If we cancel this move after rampaging, we end the turn.
-                if (rampaged)
-                {
-                    move.reset();
-                    _finalize_cancelled_rampage_move();
-                    return;
-                }
-                you.turn_is_over = false;
-                return;
+                return false;
             }
 
+            if (rampaging && mon->alive())
+                mon->stagger(5);
+
+            did_attack = true;
             you.turn_is_over = true;
             you.berserk_penalty = 0;
-            attacking = true;
+            return false;
+        }
+        else if (fedhas_passthrough(mon))
+            fedhas_move = true;
+        // If this is a monster we want to swap with, see if we can.
+        else
+        {
+            if (mon->type == MONS_CLOCKWORK_BEE_INACTIVE)
+            {
+                // Spend a turn if we actually charge the bee, but
+                // abort regardless.
+                if (clockwork_bee_recharge(you, *mon))
+                    you.turn_is_over = true;
+
+                return false;
+            }
+            else if (!swap_check(mon, mon_swap_dest))
+                return false;
         }
     }
-    else if (rampaged && !you.is_motile())
+
+    if (feat_is_closed_door(env.grid(targ)))
     {
-        // We rampaged onto something that has stopped us moving and we
-        // don't have a target to hit.
-        _finalize_cancelled_rampage_move();
-        return;
+        if (Options.travel_open_doors == travel_open_doors_type::open
+            || !you.running)
+        {
+            open_door_action(targ - you.pos());
+
+            // Used to not interrupt travel, even if we didn't 'move' this turn.
+            // (Technically the player may not have opened the door, due to a
+            // cancelled prompt, but an interrupt will have already stopped
+            // travel in that case.)
+            did_open_door = true;
+        }
+        return false;
     }
-    else if (you.form == transformation::fungus && moving && !you.confused())
+
+    // Now we know we actually want to move *into* this spot, let's see if we can.
+    // XXX: Liquids the player cannot enter are handled by check_moveto_terrain(),
+    //      which has already been called, so no need to check again.
+    if (you.cannot_move())
+    {
+        canned_msg(MSG_CANNOT_MOVE);
+        return false;
+    }
+    else if (_cannot_step_into(targ))
+    {
+        _handle_trying_to_move_into_unpassable_terrain(targ);
+        you.digging = false;
+        return false;
+    }
+
+    if (!you.confused())
     {
         if (you.is_nervous())
         {
             mpr("You're too terrified to move while being watched!");
-            stop_running();
-            you.turn_is_over = false;
-            return;
+            return false;
+        }
+        // If we're rampaging, we've already determined that the endpoint is at
+        // an appropriate range, so don't stop for beholders in the middle.
+        else if (!rampaging)
+        {
+            if (monster* beholder = you.get_beholder(targ))
+            {
+                mprf("You cannot move away from %s!",
+                     beholder->name(DESC_THE).c_str());
+                return false;
+            }
+            else if (monster* fearmonger = you.get_fearmonger(targ))
+            {
+                mprf("You cannot move closer to %s!",
+                    fearmonger->name(DESC_THE).c_str());
+                return false;
+            }
         }
     }
 
-    const bool running = you_are_delayed() && current_delay()->is_run();
-    bool dug = false;
+    if (!you.attempt_escape()) // false means constricted and did not escape
+        return false;
 
-    if (!attacking && targ_pass && moving && !beholder && !fmonger)
+    if (you.digging)
     {
-        if (you.confused() && is_feat_dangerous(env.grid(targ)))
-        {
-            mprf("You nearly stumble into %s!",
-                 feature_description_at(targ, false, DESC_THE).c_str());
-            you.apply_berserk_penalty = true;
-            you.turn_is_over = true;
-            return;
-        }
-
-        // Allow (e.g.) "Really move and attack while wielding nothing?" abort.
-        if (!rampaged && wu_jian_move_triggers_attacks(targ)
-            && !wielded_weapon_check(you.weapon(), "move and attack"))
-        {
-            return;
-        }
-
-        // If confused, we've already been prompted (in case of stumbling into
-        // a monster and attacking instead).
-        // If rampaging we've already been prompted.
-        if (!you.confused() && !rampaged && !check_moveto(targ, walkverb))
-        {
-            stop_running();
-            you.turn_is_over = false;
-            return;
-        }
-
-        if (!you.attempt_escape()) // false means constricted and did not escape
-            return;
-
-        if (you.digging)
+        if (!feat_is_solid(env.grid(targ)))
+            you.digging = false;
+        else
         {
             mprf("You dig through %s.", feature_description_at(targ, false,
-                 DESC_THE).c_str());
+                    DESC_THE).c_str());
             destroy_wall(targ);
             noisy(6, you.pos());
             drain_player(15, false, true);
-            dug = true;
         }
+    }
 
-        if (swap)
-            _swap_places(targ_monst, mon_swap_dest);
-
-        if (running && env.travel_trail.empty())
-            env.travel_trail.push_back(you.pos());
-        else if (!running)
-            clear_travel_trail();
-
-        _apply_move_time_taken();
-
-        coord_def old_pos = you.pos();
-        // Don't trigger things that require movement
-        // when confusion causes no move.
-        if (you.pos() != targ && targ_pass)
+    // Move any swapping monster to our current position.
+    if (mon)
+    {
+        if (fedhas_move)
         {
-            _clear_constriction_data();
-            _mark_potential_pursuers(targ);
-            move_player_to_grid(targ, true);
-            if (rampaged)
-                apply_rampage_heal();
-            player_did_deliberate_movement();
-            remove_ice_movement();
-            you.clear_far_engulf(false, true);
-            apply_cloud_trail(old_pos);
+            // Moving over plants is slow. We will print a message about it but
+            // only when moving from open space->plant.
+            delay += 5;
+
+            const monster* current = monster_at(you.pos());
+            if (!current || !fedhas_passthrough(current))
+            {
+                mprf("You %s carefully through the %s.",
+                        _get_move_verb(rampaging).c_str(),
+                    mons_genus(mon->type) == MONS_FUNGUS ? "fungus"
+                                                         : "plants");
+            }
         }
+        else
+            player_displace_monster(mon, mon_swap_dest);
+    }
 
-        // Now it is safe to apply the swappee's location effects and add
-        // trailing effects. Doing so earlier would allow e.g. shadow traps to
-        // put a monster at the player's location.
-        if (swap)
-            targ_monst->apply_location_effects(targ);
+    const bool running = you_are_delayed() && current_delay()->is_run();
+    if (running && env.travel_trail.empty())
+        env.travel_trail.push_back(you.pos());
+    else if (!running)
+        clear_travel_trail();
 
-        if (swap && targ_monst->type == MONS_SOLAR_EMBER
-            && targ_monst->hit_points < targ_monst->max_hit_points)
+    _mark_potential_pursuers(targ);
+
+    // XXX: While this is deliberate movement, we specifically don't use
+    //      MV_DELIBERATE here so that rampage does not trigger barbs potentially
+    //      many times in a row. move_player_action() will do this later.
+    you.move_to(targ, MV_NO_TRAVEL_STOP, true);
+
+    // Calculate delay based on the tile we moved *into* (before any traps trigger
+    // and potentially move us somewhere else).
+    delay += player_movement_speed();
+    did_move = true;
+
+    if (mon && !fedhas_move)
+    {
+        if (mon->type == MONS_SOLAR_EMBER
+            && mon->hit_points < mon->max_hit_points)
         {
-            targ_monst->heal(targ_monst->max_hit_points * 3 / 4);
+            mon->heal(mon->max_hit_points * 3 / 4);
             mprf("You weave more energy into your solar ember.");
         }
 
-        if (you_are_delayed() && current_delay()->is_run())
-            env.travel_trail.push_back(you.pos());
+        mon->finalise_movement();
+    }
 
-        move.reset();
+    if (running)
+        env.travel_trail.push_back(you.pos());
+
+    if (you_worship(GOD_WU_JIAN))
+        did_attack |= wu_jian_post_move_effects(false, initial_pos);
+
+    you.finalise_movement();
+
+    return true;
+}
+
+void move_player_action(coord_def move)
+{
+    ASSERT(!crawl_state.game_is_arena() && !crawl_state.arena_suspended);
+
+    ASSERT(!in_bounds(you.pos()) || !cell_is_solid(you.pos())
+           || you.wizmode_teleported_into_rock);
+
+    // XXX: In theory, it should be impossible to reach this function while this
+    //      statement is untrue. But current bugs with mouse input handling can
+    //      sometimes result in taking an action in the middle of taking another
+    //      action. Simple abort silently in this case, until the more
+    //      fundamental bugs can be fixed.
+    if (you.turn_is_over)
+        return;
+
+    if (you.running.check_stop_running())
+        return;
+
+    // If stuck in a net, struggle instead of doing anything
+    if (you.attribute[ATTR_HELD])
+    {
+        you.struggle_against_net();
         you.turn_is_over = true;
-        request_autopickup();
+        return;
     }
 
-    // BCR - Easy doors single move
-    if ((Options.travel_open_doors == travel_open_doors_type::open
-             || !you.running)
-        && !attacking && feat_is_closed_door(env.grid(targ)))
-    {
-        open_door_action(move);
-        move.reset();
+    // When confused, adjust movement randomly (and maybe abort early)
+    if (you.confused() && !_adjust_confused_movement(move))
         return;
-    }
-    else if (!targ_pass && !attacking)
-    {
-        // No rampage check here, since you can't rampage at walls
-        if (!you.is_motile())
-            canned_msg(MSG_CANNOT_MOVE);
-        else if (!try_to_swap)
-            _handle_trying_to_move_into_unpassable_terrain(targ, was_digging);
 
-        stop_running();
-        move.reset();
-        you.turn_is_over = false;
-        crawl_state.cancel_cmd_repeat();
-        return;
-    }
-    else if (beholder && !attacking)
+    int num_steps = 1;
+    // If this movement can rampage, check how many steps in total we want to move.
+    monster* mon_target = get_rampage_target(move);
+    if (mon_target)
+        num_steps = min(you.rampaging() + 1, grid_distance(you.pos(), mon_target->pos()));
+    const bool rampage_attack = mon_target && grid_distance(you.pos(), mon_target->pos()) == num_steps;
+
+    // Now, calculate any warnings we want to give the player for each step they will take.
+    const int stampede_steps = _stampede_move_check(move);
+    coord_def targ = you.pos();
+    string move_verb = _get_move_verb(num_steps + stampede_steps > 1);
+    const int end_step = rampage_attack ? num_steps - 2 : max(num_steps, stampede_steps) - 1 ;
+
+    // For the purposes of printing proper warnings, pretend we are taking
+    // additional normal steps.
+    for (int i = 0; i < max(num_steps, stampede_steps); ++i)
     {
-        mprf("You cannot move away from %s!",
-            beholder->name(DESC_THE).c_str());
-        stop_running();
-        // If this would have been the move after rampaging, we end the turn.
-        if (rampaged)
+        if (you.cannot_move())
+            break;
+
+        targ += move;
+
+        // Don't warn about traps or clouds on spaces we will not be entering.
+        if (_cannot_step_into(targ))
+            break;
+
+        if (monster* mon_at = monster_at(targ))
         {
-            move.reset();
-            _finalize_cancelled_rampage_move();
-            return;
+            coord_def dummy;
+            if (!stampede_steps
+                && you.can_see(*mon_at)
+                && (!mon_at->wont_attack()
+                    || !(fedhas_passthrough(mon_at)
+                         || swap_check(mon_at, dummy, true))))
+            {
+                break;
+            }
         }
-        you.turn_is_over = false;
-        return;
+
+        // Check for moving *over* all spaces but our destination.
+        // (ie: ignore clouds, since we don't expect to be staying here).
+        if (i == end_step)
+        {
+            if (!check_moveto(targ, move_verb))
+                return;
+        }
+        // At the destination, also warn about clouds and similar.
+        else if (!check_move_over(targ, move_verb))
+            return;
     }
-    else if (fmonger && !attacking)
+
+    const bool did_tailwind = num_steps > 1 && you.duration[DUR_TAILWIND];
+    if (did_tailwind)
+        you.duration[DUR_TAILWIND] = 0;
+
+    // Print a message, if rampaging.
+    if (num_steps > 1 && mon_target)
     {
-        mprf("You cannot move closer to %s!",
-            fmonger->name(DESC_THE).c_str());
-        stop_running();
-        // If this would have been the move after rampaging, we end the turn.
-        if (rampaged)
+        mprf("You %s towards %s%s!",
+                move_verb.c_str(),
+                mon_target->name(DESC_THE, true).c_str(),
+                did_tailwind ? " with incredible speed" : "");
+
+        // Prevent full-LoS stabbing with Seven League Boots.
+        if (you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS))
+            behaviour_event(mon_target, ME_ALERT, &you, you.pos());
+    }
+
+    // Now, we can assume the player has been fully prompted for any movement,
+    // so take each step in order (tracking whether we actually moved or attack,
+    // and how much time it took to move through each space).
+    const coord_def initial_pos = you.pos();
+    targ = you.pos();
+    int delay = 0;
+    int steps_taken = 0;
+    bool did_move = false;
+    bool did_attack = false;
+    bool did_open_door = false;
+    bool did_stampede = false;
+    for (; steps_taken < num_steps; ++steps_taken)
+    {
+        // If we have somehow ended up somewhere other than where we tried
+        // to move (likely due to a trap), abort any further steps.
+        if (you.pos() != targ || you.caught())
+            break;
+
+        targ += move;
+
+        // If we were rampaging towards a monster we expected to attack, and it
+        // died or became displaced before we reached it, don't rampage into its space.
+        if (rampage_attack && steps_taken == num_steps - 1
+            && (!mon_target->alive() || mon_target->pos() != targ))
         {
-            move.reset();
-            _finalize_cancelled_rampage_move();
-            return;
+            break;
         }
-        you.turn_is_over = false;
-        return;
+
+        if (!_handle_player_step(targ, delay, num_steps > 1,
+                                 did_stampede,
+                                 did_move, did_attack, did_open_door))
+        {
+            // Need to mark another step here so that move delay will avoid a div-by-0
+            if (did_stampede)
+                ++steps_taken;
+            break;
+        }
+    }
+
+    // Movement delay is the average of the delay of all steps we took, unless
+    // we attacked without moving (in which case use the delay already set by
+    // player_fight())
+    if (did_move)
+    {
+        delay = div_rand_round(delay, steps_taken);
+        you.time_taken = div_rand_round(player_speed() * delay, BASELINE_DELAY);
+        you.turn_is_over = true;
     }
 
     if (you.running == RMODE_START)
@@ -1274,20 +1228,46 @@ void move_player_action(coord_def move)
     if (player_in_branch(BRANCH_ABYSS))
         maybe_shift_abyss_around_player();
 
-    you.apply_berserk_penalty = !attacking;
-
-    if (rampaged && !you.has_mutation(MUT_ROLLPAGE)
-        || you.unrand_equipped(UNRAND_LIGHTNING_SCALES))
+    if (did_move)
     {
-        did_god_conduct(DID_HASTY, 1, true);
+        player_did_deliberate_movement();
+        wu_jian_trigger_serpents_lash(false);
+
+        if (you.duration[DUR_NO_HOP])
+            you.duration[DUR_NO_HOP] += you.time_taken;
+        if (you.duration[DUR_MESMERISM_COOLDOWN])
+            you.duration[DUR_MESMERISM_COOLDOWN] += you.time_taken;
+
+        if (you.unrand_equipped(UNRAND_LIGHTNING_SCALES)
+            || num_steps > 1 && !you.has_mutation(MUT_STAMPEDE))
+        {
+            did_god_conduct(DID_HASTY, 1, true);
+        }
+
+        if (!did_attack && (num_steps > 1 || did_stampede) && you.has_mutation(MUT_STAMPEDE))
+            did_attack |= do_west_wind_shot();
+
+        if (!did_attack)
+            update_acrobat_status();
+
+        // Either a rampage movement or a stampede push will sustain stampede.
+        if ((num_steps > 1 || did_stampede) && you.has_mutation(MUT_STAMPEDE))
+        {
+            if (you.has_mutation(MUT_EAST_WIND))
+                _do_east_wind(did_stampede ? 2 : num_steps);
+            you.duration[DUR_STAMPEDE] = you.time_taken + 1;
+        }
     }
 
-    if (you_worship(GOD_WU_JIAN) && !attacking && !dug)
-        did_wu_jian_attack = wu_jian_post_move_effects(false, initial_position);
-    else if (you_worship(GOD_WU_JIAN) && attacking && rampaged)
-        wu_jian_trigger_serpents_lash(false, initial_position);
+    if (!did_move && !did_attack && !did_open_door)
+    {
+        stop_running();
+        crawl_state.cancel_cmd_repeat();
+    }
 
-    // If you actually moved without attacking, acrobatics may kick in.
-    if (!attacking && moving && !did_wu_jian_attack)
-        update_acrobat_status();
+    if (did_tailwind)
+        you.time_taken = 0;
+
+    if (you.pos() != initial_pos)
+        request_autopickup();
 }

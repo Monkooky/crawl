@@ -55,6 +55,7 @@
 #include "macro.h"
 #include "melee-attack.h"
 #include "message.h"
+#include "mon-behv.h"
 #include "mon-place.h"
 #include "movement.h"
 #include "mutation.h"
@@ -62,6 +63,7 @@
 #include "notes.h"
 #include "output.h"
 #include "player-equip.h"
+#include "player-notices.h"
 #include "player-reacts.h"
 #include "player-save-info.h"
 #include "player-stats.h"
@@ -70,6 +72,7 @@
 #include "shout.h"
 #include "skills.h"
 #include "species.h" // random_starting_species
+#include "spl-book.h"
 #include "spl-clouds.h" // explode_blastmotes_at
 #include "spl-damage.h"
 #include "spl-monench.h"
@@ -323,7 +326,7 @@ bool check_moveto_terrain(const coord_def& p, const string &move_verb,
 
         prompt += "Are you sure you want to " + move_verb;
 
-        if (you.ground_level())
+        if (!you.airborne())
             prompt += " into ";
         else
             prompt += " over ";
@@ -393,7 +396,7 @@ bool check_moveto_exclusion(const coord_def& p, const string &move_verb,
  */
 bool check_moveto(const coord_def& p, const string &move_verb, bool physically)
 {
-    return !(physically && cancel_harmful_move(physically, move_verb == "rampage"))
+    return !(physically && cancel_harmful_move(physically))
            && check_moveto_terrain(p, move_verb, "")
            && check_moveto_cloud(p, move_verb)
            && check_moveto_trap(p, move_verb)
@@ -424,7 +427,7 @@ bool swap_check(monster* mons, coord_def &loc, bool quiet)
 {
     loc = you.pos();
 
-    if (!you.is_motile())
+    if (you.cannot_move())
         return false;
 
     // Don't move onto dangerous terrain.
@@ -524,17 +527,6 @@ bool player::slow_in_water() const
         && you.body_size(PSIZE_BODY) <= SIZE_MEDIUM;
 }
 
-static void _maybe_sink(dungeon_feature_type old_feat,
-                        dungeon_feature_type new_grid)
-{
-    if (!you.can_swim()
-        && new_grid == DNGN_DEEP_WATER
-        && old_feat != DNGN_DEEP_WATER)
-    {
-        mpr("You sink to the bottom.");
-    }
-}
-
 static void _enter_water(dungeon_feature_type old_feat,
                          dungeon_feature_type new_grid, bool stepped)
 {
@@ -556,10 +548,7 @@ static void _enter_water(dungeon_feature_type old_feat,
 
     // Most of these messages are irrelevant when you're already in the water.
     if (feat_is_water(old_feat))
-    {
-        _maybe_sink(old_feat, new_grid);
         return;
-    }
 
     if (new_grid == DNGN_TOXIC_BOG)
         mprf("You %s the toxic bog.", stepped ? "enter" : "fall into");
@@ -570,8 +559,6 @@ static void _enter_water(dungeon_feature_type old_feat,
              new_grid == DNGN_SHALLOW_WATER ? "shallow" : "deep");
     }
 
-    _maybe_sink(old_feat, new_grid);
-
     if (you.slow_in_water())
     {
         mpr("Moving in this stuff is going to be slow.");
@@ -581,111 +568,230 @@ static void _enter_water(dungeon_feature_type old_feat,
         mpr("Don't expect to remain undetected while in the water.");
 }
 
-void moveto_location_effects(dungeon_feature_type old_feat,
-                             bool stepped, const coord_def& old_pos)
+static bool _valid_entanglement_target(const monster& mon, bool check_no_tele)
 {
-    const dungeon_feature_type new_grid = env.grid(you.pos());
+    return !mon.no_tele()
+           && !mon.wont_attack()
+           && !mon.is_peripheral()
+           && !adjacent(mon.pos(), you.pos())
+           && (!check_no_tele || !(env.pgrid(mon.pos()) & FPROP_NO_TELE_INTO));
+}
 
-    // Terrain effects.
+static void _check_spatial_entanglement(const coord_def& oldpos)
+{
+    if (!one_chance_in(3))
+        return;
+
+    monster* mon = nullptr;
+    int num_seen = 0;
+    bool not_in_sight = false;
+
+    // Short-range translocations grab a monster in sight of your old position,
+    // preferring ones not also in sight of your current position.
+    if (you.see_cell(oldpos))
+    {
+        for (monster_near_iterator mi(oldpos, LOS_NO_TRANS); mi; ++mi)
+        {
+            if (_valid_entanglement_target(**mi, false)
+                && ((!mon || !not_in_sight || !you.see_cell_no_trans(mi->pos()))
+                    && one_chance_in(++num_seen)))
+            {
+                mon = *mi;
+                not_in_sight = !you.see_cell_no_trans(mi->pos());
+            }
+        }
+    }
+    // Long-range translocations grab a monster from anywhere on the floor,
+    // though ideally one not still in sight.
+    else
+    {
+        for (monster_iterator mi; mi; ++mi)
+        {
+            if (_valid_entanglement_target(**mi, true)
+                && ((!mon || !not_in_sight || !you.see_cell_no_trans(mi->pos()))
+                    && one_chance_in(++num_seen)))
+            {
+                mon = *mi;
+                not_in_sight = !you.see_cell_no_trans(mi->pos());
+            }
+        }
+    }
+
+    if (!mon)
+        return;
+
+    coord_def spot;
+    if (!find_habitable_spot_near(you.pos(), mon->type, 3, spot, 1, &you))
+        return;
+
+    place_cloud(CLOUD_TLOC_ENERGY, mon->pos(), random_range(2, 3), &you);
+    mon->move_to(spot, MV_TRANSLOCATION, true);
+
+    mprf("%s is dragged along with you!", mon->name(DESC_THE).c_str());
+    mon->speed_increment -= you.time_taken;
+    mon->finalise_movement();
+    if (mon->alive())
+        behaviour_event(mon, ME_ALERT, &you, you.pos());
+}
+
+bool player::move_to(const coord_def& newpos, movement_type flags, bool defer_finalisation)
+{
+    ASSERT(!crawl_state.game_is_arena());
+
+    // For internal movements, do the bare minimum to reposition the player and
+    // do no validation. (This is often used as an 'inbetween' state, during
+    // multi-part movements or level transitions).
+    if ((flags & MV_INTERNAL))
+    {
+        crawl_view.set_player_at(newpos);
+        set_position(newpos);
+        return true;
+    }
+
+    // Ensure that the player is legally allowed to stand here.
+    ASSERT_IN_BOUNDS(newpos);
+    ASSERT(can_pass_through_feat(env.grid(newpos)));
+
+    ASSERT(!monster_at(newpos)
+           || (flags & MV_ALLOW_OVERLAP)
+           || fedhas_passthrough(monster_at(newpos))
+           || mons_is_wrath_avatar(*monster_at(newpos)));
+
+    // Store current position for later finalisation (but if we have been moved
+    // multiple times in sequence before finalisation, which some effects like
+    // Gavotte do, only remember the first tile we left).
+    if (!move_needs_finalisation)
+        last_move_pos = pos();
+    move_needs_finalisation = true;
+    last_move_flags = flags;
+
+    // Move the player to new location.
+    crawl_view.set_player_at(newpos);
+    set_position(newpos);
+
+    viewwindow();
+    update_screen();
+
+    // Finalise immediately if we weren't told to defer.
+    if (!defer_finalisation)
+        finalise_movement();
+
+    return true;
+}
+
+void player::finalise_movement(const actor* /*to_blame*/)
+{
+    if (!move_needs_finalisation || pending_revival)
+        return;
+
+    const coord_def start_pos = pos();
+
+    if (!(last_move_flags & MV_PRESERVE_CONSTRICTION))
+        clear_invalid_constrictions();
+
+    if (last_move_flags & MV_TRANSLOCATION)
+        stop_being_caught(true);
+
+    if (last_move_pos != you.pos())
+    {
+        stop_channelling_spells();
+        remove_ice_movement();
+
+        if ((last_move_flags & MV_DELIBERATE) && !(last_move_flags & MV_TRANSLOCATION))
+            player_did_deliberate_movement();
+    }
+
+    // Assuming that entering the same square means coming from above (flight)
+    const dungeon_feature_type new_grid = env.grid(pos());
+    const bool from_above = (last_move_pos == pos());
+    const dungeon_feature_type old_grid =
+        (from_above) ? DNGN_FLOOR : env.grid(last_move_pos);
+
     if (is_feat_dangerous(new_grid))
         fall_into_a_pool(new_grid);
 
-    // called after fall_into_a_pool, in case of emergency untransform
-    if (you.has_innate_mutation(MUT_MERTAIL))
-        merfolk_check_swimming(old_feat, stepped);
+    if (has_innate_mutation(MUT_MERTAIL))
+        merfolk_check_swimming(old_grid);
 
-    if (you.ground_level())
+    if (!airborne())
     {
         if (feat_is_water(new_grid))
-            _enter_water(old_feat, new_grid, stepped);
-        else if (you.props.exists(TEMP_WATERWALK_KEY))
-            you.props.erase(TEMP_WATERWALK_KEY);
+        {
+            const bool stepped = (last_move_pos != pos() && !(last_move_flags & MV_TRANSLOCATION));
+            _enter_water(old_grid, new_grid, stepped);
+        }
+        else if (props.exists(TEMP_WATERWALK_KEY))
+            props.erase(TEMP_WATERWALK_KEY);
+    }
+
+    if (last_move_pos != pos())
+    {
+        cloud_struct* cloud = cloud_at(pos());
+        if (cloud && cloud->type == CLOUD_BLASTMOTES)
+            explode_blastmotes_at(pos()); // schedules a fineff
+
+        if (env.grid(pos()) == DNGN_BINDING_SIGIL)
+            trigger_binding_sigil(you);
+
+        apply_cloud_trail(last_move_pos);
+
+        // Traps go off.
+        // (But not when losing flight - i.e., moving into the same tile)
+        trap_def* ptrap = trap_at(pos());
+        if (ptrap && (ptrap->type != TRAP_GOLUBRIA || !(last_move_flags & MV_GOLUBRIA)))
+            ptrap->trigger(you);
+
+        // If a trap we triggered moved us, much of the rest of this produces
+        // dubious results and should be skipped.
+        if (pos() != start_pos)
+        {
+            clear_deferred_move();      // Just in case.
+            return;
+        }
     }
 
     id_floor_items();
 
-    // Falling into a toxic bog, take the damage
-    if (old_pos == you.pos() && stepped)
-        actor_apply_toxic_bog(&you);
-
-    if (!actor_slime_wall_immune(&you))
+    if (!actor_slime_wall_immune(this))
     {
-        const bool was_slimy = slime_wall_neighbour(old_pos);
-        const bool is_slimy = slime_wall_neighbour(you.pos());
+        const bool was_slimy = slime_wall_neighbour(last_move_pos);
+        const bool is_slimy = slime_wall_neighbour(pos());
         if (was_slimy || is_slimy)
        {
-           you.redraw_armour_class = true;
-           you.wield_change = true;
+           redraw_armour_class = true;
+           wield_change = true;
            if (!was_slimy)
                mpr("Acid dripping from the walls corrodes you.");
        }
     }
 
-    if (old_pos != you.pos())
-    {
-        cloud_struct* cloud = cloud_at(you.pos());
-        if (cloud && cloud->type == CLOUD_BLASTMOTES)
-            explode_blastmotes_at(you.pos()); // schedules a fineff
+    if (last_move_flags & MV_TRANSLOCATION && you.has_mutation(MUT_SPATIAL_ENTANGLEMENT))
+        _check_spatial_entanglement(last_move_pos);
 
-        // Traps go off.
-        // (But not when losing flight - i.e., moving into the same tile)
-        trap_def* ptrap = trap_at(you.pos());
-        if (ptrap)
-            ptrap->trigger(you);
-
-        if (env.grid(you.pos()) == DNGN_BINDING_SIGIL)
-            trigger_binding_sigil(you);
-    }
-
-    if (stepped)
-        _moveto_maybe_repel_stairs();
+    _moveto_maybe_repel_stairs();
 
     // Reveal adjacent mimics.
-    for (adjacent_iterator ai(you.pos(), false); ai; ++ai)
+    for (adjacent_iterator ai(pos(), false); ai; ++ai)
         discover_mimic(*ai);
 
-    bool was_running = you.running;
+    const bool was_running = you.running;
 
     update_monsters_in_view();
-    if (check_for_interesting_features() && you.running.is_explore())
+    if (check_for_interesting_features() && running.is_explore())
         stop_running();
+
+    // Most forms of movement that aren't the player manually taking steps should
+    // interrupt delays.
+    if ((!(last_move_flags & (MV_DELIBERATE | MV_NO_TRAVEL_STOP)) || (last_move_flags & MV_TRANSLOCATION)))
+        stop_delay(true);
 
     // If travel was interrupted, we need to add the last step
     // to the travel trail.
-    if (was_running && !you.running)
-        env.travel_trail.push_back(you.pos());
+    if (was_running && !running)
+        env.travel_trail.push_back(pos());
+
+    clear_deferred_move();
 }
-
-// Use this function whenever the player enters (or lands and thus re-enters)
-// a grid.
-//
-// stepped     - normal walking moves
-void move_player_to_grid(const coord_def& p, bool stepped)
-{
-    ASSERT(!crawl_state.game_is_arena());
-    ASSERT_IN_BOUNDS(p);
-
-    // assuming that entering the same square means coming from above (flight)
-    const coord_def old_pos = you.pos();
-    const bool from_above = (old_pos == p);
-    const dungeon_feature_type old_grid =
-        (from_above) ? DNGN_FLOOR : env.grid(old_pos);
-
-    // Really must be clear.
-    ASSERT(you.can_pass_through_feat(env.grid(p)));
-
-    ASSERT(!monster_at(p)
-           || fedhas_passthrough(monster_at(p))
-           || mons_is_wrath_avatar(*monster_at(p)));
-
-    // Move the player to new location.
-    you.moveto(p, true);
-    viewwindow();
-    update_screen();
-
-    moveto_location_effects(old_grid, stepped, old_pos);
-}
-
 
 /**
  * Check if the given terrain feature is safe for the player to move into.
@@ -1068,7 +1174,7 @@ int get_teleportitis_level()
     if (you.stasis())
         return 0;
 
-    return you.get_mutation_level(MUT_TELEPORT) * 6;
+    return you.get_mutation_level(MUT_TELEPORTITIS);
 }
 
 // Computes bonuses to regeneration from most sources. Does not handle
@@ -1085,6 +1191,8 @@ static int _player_bonus_regen()
             && armour_type_prop(item->sub_type, ARMF_REGENERATION))
         {
             rr += REGEN_PIP;
+            if (you.form == transformation::fortress_crab)
+                rr += REGEN_PIP;
         }
         if (item->is_type(OBJ_JEWELLERY, AMU_REGENERATION))
             rr += REGEN_PIP;
@@ -1102,12 +1210,11 @@ static int _player_bonus_regen()
     if (you.duration[DUR_POWERED_BY_DEATH])
         rr += you.props[POWERED_BY_DEATH_KEY].get_int() * 100;
 
-    // Rampage healing grants a variable regen boost while active.
-    if (you.get_mutation_level(MUT_ROLLPAGE) > 1
-        && you.duration[DUR_RAMPAGE_HEAL])
-    {
-        rr += you.props[RAMPAGE_HEAL_KEY].get_int() * 65;
-    }
+    if (you.duration[DUR_ENGORGED])
+        rr += get_form()->get_effect_size();
+
+    if (you.duration[DUR_OOZE_REGEN])
+        rr += you.hp_max * 4;
 
     return rr;
 }
@@ -1176,6 +1283,14 @@ int player_regen()
     return rr;
 }
 
+int player_indomitable_regen_rate()
+{
+    if (!you.duration[DUR_INDOMITABLE])
+        return 0;
+
+    return you.hp_max / 7 + 15;
+}
+
 int player_mp_regen()
 {
     if (you.has_mutation(MUT_HP_CASTING))
@@ -1196,9 +1311,8 @@ int player_mp_regen()
             regen_amount += 40 * artefact_property(*item, ARTP_MANA_REGENERATION);
     }
 
-    // Rampage healing grants a variable regen boost while active.
-    if (you.duration[DUR_RAMPAGE_HEAL])
-        regen_amount += you.props[RAMPAGE_HEAL_KEY].get_int() * 33;
+    if (you.duration[DUR_OOZE_REGEN])
+        regen_amount += you.max_magic_points * 4;
 
     if (have_passive(passive_t::jelly_regen))
     {
@@ -1261,16 +1375,11 @@ int player_res_fire(bool allow_random, bool temp, bool items)
         // Staves
         rf += you.wearing(OBJ_STAVES, STAFF_FIRE);
 
-        // body armour:
-        const item_def *body_armour = you.body_armour();
-        if (body_armour)
-            rf += armour_type_prop(body_armour->sub_type, ARMF_RES_FIRE);
-
         // ego armours
         rf += you.wearing_ego(OBJ_ARMOUR, SPARM_FIRE_RESISTANCE);
         rf += you.wearing_ego(OBJ_ARMOUR, SPARM_RESISTANCE);
 
-        // randart weapons:
+        // artefacts and dragon armour
         rf += you.scan_artefacts(ARTP_FIRE);
 
         // dragonskin cloak: 0.5 to draconic resistances
@@ -1361,16 +1470,11 @@ int player_res_cold(bool allow_random, bool temp, bool items)
         // Staves
         rc += you.wearing(OBJ_STAVES, STAFF_COLD);
 
-        // body armour:
-        const item_def *body_armour = you.body_armour();
-        if (body_armour)
-            rc += armour_type_prop(body_armour->sub_type, ARMF_RES_COLD);
-
         // ego armours
         rc += you.wearing_ego(OBJ_ARMOUR, SPARM_COLD_RESISTANCE);
         rc += you.wearing_ego(OBJ_ARMOUR, SPARM_RESISTANCE);
 
-        // randart weapons:
+        // artefacts and dragon armour
         rc += you.scan_artefacts(ARTP_COLD);
 
         // dragonskin cloak: 0.5 to draconic resistances
@@ -1440,12 +1544,7 @@ int player_res_electricity(bool allow_random, bool temp, bool items)
         // staff
         re += you.wearing(OBJ_STAVES, STAFF_AIR);
 
-        // body armour:
-        const item_def *body_armour = you.body_armour();
-        if (body_armour)
-            re += armour_type_prop(body_armour->sub_type, ARMF_RES_ELEC);
-
-        // randart weapons:
+        // artefacts and dragon armour
         re += you.scan_artefacts(ARTP_ELECTRICITY);
 
         // dragonskin cloak: 0.5 to draconic resistances
@@ -1513,12 +1612,7 @@ int player_res_poison(bool allow_random, bool temp, bool items, bool forms)
         // ego armour:
         rp += you.wearing_ego(OBJ_ARMOUR, SPARM_POISON_RESISTANCE);
 
-        // body armour:
-        const item_def *body_armour = you.body_armour();
-        if (body_armour)
-            rp += armour_type_prop(body_armour->sub_type, ARMF_RES_POISON);
-
-        // rPois+ artefacts
+        // rPois+ artefacts and dragon armour
         rp += you.scan_artefacts(ARTP_POISON);
 
         // dragonskin cloak: 0.5 to draconic resistances
@@ -1681,7 +1775,7 @@ int player_spec_alchemy()
     if (you.wearing(OBJ_STAVES, STAFF_ALCHEMY))
         sp += 1 + you.wearing_ego(OBJ_ARMOUR, SPARM_ATTUNEMENT);
 
-    sp += you.wearing_jewellery(AMU_ALCHEMY);
+    sp += you.wearing_jewellery(AMU_CHEMISTRY);
 
     sp += you.scan_artefacts(ARTP_ENHANCE_ALCHEMY);
 
@@ -1717,15 +1811,10 @@ int player_prot_life(bool allow_random, bool temp, bool items)
         // rings
         pl += you.wearing_jewellery(RING_POSITIVE_ENERGY);
 
-        // armour (checks body armour only)
+        // ego armour
         pl += you.wearing_ego(OBJ_ARMOUR, SPARM_POSITIVE_ENERGY);
 
-        // pearl dragon counts
-        const item_def *body_armour = you.body_armour();
-        if (body_armour)
-            pl += armour_type_prop(body_armour->sub_type, ARMF_RES_NEG);
-
-        // randart wpns
+        // randarts and dragon armour
         pl += you.scan_artefacts(ARTP_NEGATIVE_ENERGY);
 
         // dragonskin cloak: 0.5 to draconic resistances
@@ -1831,7 +1920,7 @@ int player_speed()
     int ps = 10;
 
     // When paralysed, speed is irrelevant.
-    if (you.cannot_act())
+    if (you.helpless())
         return ps;
 
     if (you.duration[DUR_SLOW] || have_stat_zero())
@@ -1895,6 +1984,11 @@ int player_parrying()
             sh /= 2;
     }
 
+    sh += 10 * you.wearing_ego(OBJ_WEAPONS, SPWPN_REBUKE);
+
+    if (you.form == transformation::blade)
+        sh += get_form()->get_effect_size() + max(0, you.slaying());
+
     return sh;
 }
 
@@ -1947,7 +2041,8 @@ static int _player_aux_evasion_penalty(const int scale)
     return piece_armour_evasion_penalty * scale / 10;
 }
 
-// Long-term player flat EV bonuses/penalties (eg: evasion rings, EV mutations, forms)
+// Long-term player flat integer EV bonuses/penalties (eg: evasion rings, EV
+// mutations). This does not include forms as they provide fractional EV.
 static int _player_base_evasion_modifiers()
 {
     int evbonus = 0;
@@ -1962,7 +2057,6 @@ static int _player_base_evasion_modifiers()
     if (you.get_mutation_level(MUT_DISTORTION_FIELD))
         evbonus += you.get_mutation_level(MUT_DISTORTION_FIELD) + 1;
 
-    // XXX: rescale these modifiers to allow +0.5 EV bonuses past the soft cap?
     if (you.get_mutation_level(MUT_PROTEAN_GRACE))
         evbonus += protean_grace_amount();
 
@@ -1972,12 +2066,6 @@ static int _player_base_evasion_modifiers()
     // transformation penalties/bonuses not covered by size alone:
     if (you.get_mutation_level(MUT_SLOW_REFLEXES))
         evbonus -= you.get_mutation_level(MUT_SLOW_REFLEXES) * 5;
-
-    // Consider this a 'permanent' bonus, since players in forms will often
-    // remain in that form for a long time. This is slightly untrue for
-    // hostile polymorph, however I don't think any of them affect the player's
-    // EV in this manner (tree form simply caps it in the same way as paralysis)
-    evbonus += get_form()->ev_bonus();
 
     return evbonus;
 }
@@ -1992,6 +2080,9 @@ static int _player_temporary_evasion_modifiers()
 
     if (you.duration[DUR_AGILITY])
         evbonus += AGILITY_BONUS;
+
+    if (you.duration[DUR_DEVIOUS])
+        evbonus += (you.props[DEVIOUS_KEY].get_int() * 4);
 
     // If you have an active amulet of the acrobat and just moved or waited,
     // get a massive EV bonus.
@@ -2083,6 +2174,7 @@ static int _player_evasion(int final_scale, bool ignore_temporary)
         - you.adjusted_body_armour_penalty(scale)
         - you.adjusted_shield_penalty(scale)
         - _player_aux_evasion_penalty(scale)
+        + get_form()->ev_bonus() // Comes pre-scaled by a factor of 100.
         + _player_base_evasion_modifiers() * scale;
 
     if (you.form == transformation::statue)
@@ -2098,7 +2190,7 @@ static int _player_evasion(int final_scale, bool ignore_temporary)
        + (_player_temporary_evasion_modifiers() * scale);
 
     // Cap EV at a very low level if the player cannot act or is a tree.
-    if ((you.cannot_act() || you.form == transformation::tree))
+    if ((you.helpless() || you.form == transformation::tree))
     {
         final_evasion = min((2 + _player_evasion_size_factor() / 2) * scale,
                             final_evasion);
@@ -2191,7 +2283,7 @@ int player_shield_class(int scale, bool random, bool ignore_temporary)
         return 0;
 
     const item_def *shield_item = you.shield();
-    if (is_shield(shield_item))
+    if (shield_item)
         shield += _sh_from_shield(*shield_item);
 
     // mutations
@@ -2866,6 +2958,7 @@ static void _revenant_spell_gift()
 
     mprf("You remember %s.", msg.c_str());
     mprf("(You can now cast %s.)", spell_title(spell));
+    library_add_spells({spell}, true);
     add_spell_to_memory(spell);
 }
 
@@ -3256,9 +3349,6 @@ int player_stealth()
         const int evp = player_armour_stealth_penalty();
         const int penalty = evp * evp * 2 / 3;
         stealth -= penalty;
-
-        const int pips = armour_type_prop(arm->sub_type, ARMF_STEALTH);
-        stealth += pips * STEALTH_PIP;
     }
 
     stealth += STEALTH_PIP * you.scan_artefacts(ARTP_STEALTH);
@@ -3310,6 +3400,9 @@ int player_stealth()
     // or affect to-hit, affects stealth even more than regular glow.
     if (player_has_orb() || you.unrand_equipped(UNRAND_CHARLATANS_ORB))
         stealth /= 3;
+
+    if (you.duration[DUR_STAMPEDE] && you.has_mutation(MUT_SOUTH_WIND))
+        stealth = stealth * 3 / 2;
 
     // Cap minimum stealth during Nightfall at 100. (0, otherwise.)
     stealth = max(you.duration[DUR_PRIMORDIAL_NIGHTFALL] ? 100 : 0, stealth);
@@ -3398,15 +3491,6 @@ static void _display_tohit()
 #endif
 }
 
-static int _delay(const item_def *weapon)
-{
-    if (!weapon || !is_range_weapon(*weapon))
-        return you.attack_delay().expected();
-    item_def fake_proj;
-    populate_fake_projectile(*weapon, fake_proj);
-    return you.attack_delay(&fake_proj).expected();
-}
-
 static bool _at_min_delay(const item_def *weapon)
 {
     return weapon
@@ -3421,7 +3505,7 @@ static bool _at_min_delay(const item_def *weapon)
 static void _display_attack_delay(const item_def *offhand)
 {
     const item_def* weapon = you.weapon();
-    const int delay = _delay(weapon);
+    const int delay = you.attack_delay().expected();
     const bool at_min_delay = _at_min_delay(weapon)
                               && (!offhand || _at_min_delay(offhand));
 
@@ -3562,6 +3646,17 @@ bool player::cloud_immune(bool items) const
            || actor::cloud_immune(items);
 }
 
+bool player::sunder_is_ready() const
+{
+    if (you.attribute[ATTR_SUNDERING_CHARGE] >= 0
+        && you.attribute[ATTR_SUNDERING_CHARGE] < SUNDERING_THRESHOLD)
+    {
+        return false;
+    }
+
+    return wearing_ego(OBJ_WEAPONS, SPWPN_SUNDERING);
+}
+
 /**
  * How much XP does it take to reach the given XL from 0?
  *
@@ -3654,7 +3749,7 @@ unsigned int exp_needed(int lev, int exp_apt)
 }
 
 // returns bonuses from rings of slaying, etc.
-int slaying_bonus(bool throwing, bool random)
+int player::slaying(bool throwing, bool random) const
 {
     int ret = 0;
 
@@ -3666,6 +3761,9 @@ int slaying_bonus(bool throwing, bool random)
     ret += 3 * augmentation_amount();
     ret += you.get_mutation_level(MUT_SHARP_SCALES);
 
+    if (you.has_mutation(MUT_MEEK))
+        ret -= 1 + you.get_mutation_level(MUT_MEEK) * 2;
+
     if (you.get_mutation_level(MUT_PROTEAN_GRACE))
         ret += protean_grace_amount();
 
@@ -3674,6 +3772,9 @@ int slaying_bonus(bool throwing, bool random)
 
     if (you.duration[DUR_WEREFURY])
         ret += you.props[WEREFURY_KEY].get_int();
+
+    if (you.duration[DUR_DEVIOUS])
+        ret += you.props[DEVIOUS_KEY].get_int() * 3;
 
     if (you.duration[DUR_HORROR])
         ret -= you.props[HORROR_PENALTY_KEY].get_int();
@@ -3830,7 +3931,7 @@ void drain_mp(int mp_loss, bool ignore_resistance)
 void pay_hp(int cost)
 {
     you.hp -= cost;
-    ASSERT(you.hp);
+    ASSERT(you.hp > 0);
 }
 
 void pay_mp(int cost)
@@ -4182,6 +4283,21 @@ bool player_harmful_contamination()
     return you.magic_contamination >= 1000;
 }
 
+// Returns the maximum damage the player could take if their current magic
+// contamination exploded.
+int contam_max_damage()
+{
+    if (you.magic_contamination < 1000)
+        return 0;
+
+    const bool severe = you.magic_contamination >= 2000;
+    const int pow = severe ? you.experience_level * 3 / 2
+                           : you.experience_level;
+    dice_def dmg = zap_damage(ZAP_CONTAM_EXPLOSION, pow, false, false);
+
+    return dmg.size * dmg.num;
+}
+
 /**
  * Provide a description of the player's magic contamination.
  *
@@ -4213,7 +4329,13 @@ string describe_contamination(bool verbose)
     const unsigned int lvl = you.magic_contamination / 1000;
     ASSERT(lvl < ARRAYSZ(verbose_desc));
 
-    return verbose ? verbose_desc[lvl] : terse_desc[lvl];
+    string msg = verbose ? verbose_desc[lvl] : terse_desc[lvl];
+
+    const int dmg = contam_max_damage();
+    if (dmg > 0)
+        msg = make_stringf("%s (up to %d damage)", msg.c_str(), dmg);
+
+    return msg;
 }
 
 // Controlled is true if the player actively did something to cause
@@ -4348,13 +4470,6 @@ bool confuse_player(int amount, bool quiet, bool force)
     }
 
     return true;
-}
-
-void paralyse_player(string source)
-{
-    const int cur_para = you.duration[DUR_PARALYSIS] / BASELINE_DELAY;
-    const int dur = random_range(2, 5 + cur_para);
-    you.paralyse(nullptr, dur, source);
 }
 
 bool poison_player(int amount, string source, string source_aux, bool force)
@@ -4681,7 +4796,7 @@ bool sticky_flame_player(int intensity, int duration, string source, string sour
 {
     ASSERT(!crawl_state.game_is_arena());
 
-    if (player_res_sticky_flame() || duration <= 0 || you.duration[DUR_WATER_HOLD]
+    if (player_res_sticky_flame() || duration <= 0
         || feat_is_water(env.grid(you.pos())))
     {
         return false;
@@ -5085,24 +5200,6 @@ void dec_frozen_ramparts(int delay)
     }
 }
 
-void reset_rampage_heal_duration()
-{
-    const int heal_dur = random_range(3, 6);
-    you.set_duration(DUR_RAMPAGE_HEAL, heal_dur);
-}
-
-void apply_rampage_heal()
-{
-    if (!you.has_mutation(MUT_ROLLPAGE))
-        return;
-
-    reset_rampage_heal_duration();
-
-    const int heal = you.props[RAMPAGE_HEAL_KEY].get_int();
-    if (heal < RAMPAGE_HEAL_MAX)
-        you.props[RAMPAGE_HEAL_KEY] = heal + 1;
-}
-
 bool invis_allowed(bool quiet, string *fail_reason, bool temp)
 {
     string msg;
@@ -5124,7 +5221,7 @@ bool invis_allowed(bool quiet, string *fail_reason, bool temp)
             sources.push_back("crown");
 
         if (temp && you.wearing_ego(OBJ_ARMOUR, SPARM_LIGHT))
-            sources.push_back("orb");
+            sources.push_back("armour");
 
         if (temp && you.props.exists(WU_JIAN_HEAVENLY_STORM_KEY)
             || you.religion == GOD_SHINING_ONE) // non-temp
@@ -5259,69 +5356,9 @@ bool land_player(bool quiet)
         mpr("You float gracefully downwards.");
 
     // Re-enter the terrain.
-    move_player_to_grid(you.pos(), false);
+    // Interrupt travel, but not other delays.
+    you.trigger_movement_effects(you.running ? MV_DEFAULT : MV_NO_TRAVEL_STOP);
     return true;
-}
-
-static void _end_water_hold()
-{
-    you.duration[DUR_WATER_HOLD] = 0;
-    you.props.erase(WATER_HOLDER_KEY);
-    you.props.erase(WATER_HOLD_SUBSTANCE_KEY);
-}
-
-static string _water_hold_substance()
-{
-    return you.props[WATER_HOLD_SUBSTANCE_KEY].get_string();
-}
-
-bool player::clear_far_engulf(bool force, bool moved)
-{
-    if (!you.duration[DUR_WATER_HOLD])
-        return false;
-
-    monster* const mons = monster_by_mid(you.props[WATER_HOLDER_KEY].get_int());
-    if (force || !mons || !mons->alive() || !adjacent(mons->pos(), you.pos()))
-    {
-        if (moved)
-        {
-            mprf("You slip free of the %s engulfing you.",
-                 _water_hold_substance().c_str());
-        }
-        else
-        {
-            mprf("The %s engulfing you falls away.",
-                 _water_hold_substance().c_str());
-        }
-
-        if (!you.res_water_drowning())
-            mpr("You gasp with relief as air once again reaches your lungs.");
-
-        _end_water_hold();
-        return true;
-    }
-    return false;
-}
-
-void handle_player_drowning(int delay)
-{
-    if (you.clear_far_engulf())
-        return;
-    if (you.res_water_drowning())
-    {
-        // Reset so damage doesn't ramp up while able to breathe
-        you.duration[DUR_WATER_HOLD] = 10;
-    }
-    else
-    {
-        you.duration[DUR_WATER_HOLD] += delay;
-        int dam =
-            div_rand_round((28 + stepdown((float)you.duration[DUR_WATER_HOLD], 28.0))
-                            * delay,
-                            BASELINE_DELAY * 10);
-        ouch(dam, KILLED_BY_WATER, you.props[WATER_HOLDER_KEY].get_int());
-        mprf(MSGCH_WARN, "Your lungs strain for air!");
-    }
 }
 
 player::player()
@@ -5393,7 +5430,7 @@ player::player()
     for (auto &item : inv)
         item.clear();
     runes.reset();
-    obtainable_runes = 15;
+    obtainable_runes = MAX_RUNES;
 
     gems_found.reset();
     gems_shattered.reset();
@@ -5516,7 +5553,6 @@ player::player()
     type_ids.init(false);
 
     banished_by.clear();
-    banished_power = 0;
 
     last_mid = 0;
     last_cast_spell = SPELL_NO_SPELL;
@@ -5548,6 +5584,8 @@ player::player()
     // Volatile (same-turn) state:
     turn_is_over     = false;
     banished         = false;
+    doing_monster_catchup = false;
+    shouted_pos.reset();
 
     wield_change         = false;
     gear_change          = false;
@@ -5569,6 +5607,10 @@ player::player()
 
     time_taken          = 0;
     shield_blocks       = 0;
+    reprisals.clear();
+    triggers_done.init(0);
+    attempted_attack    = false;
+    did_east_wind       = 0;
 
     abyss_speed         = 0;
     game_seed           = 0;
@@ -5584,6 +5626,11 @@ player::player()
 
     zot_orb_monster_known = false;
 
+    wind_category_weight.init(0);
+    wind_category_inc.init(false);
+    prevailing_wind = -1;
+    gave_wind_change_warning = false;
+
     reset_escaped_death();
     on_current_level    = true;
     seen_portals        = 0;
@@ -5593,7 +5640,9 @@ player::player()
     prev_save_version.clear();
 
     clear_constricted();
-    constricting = 0;
+    constricting = nullptr;
+
+    clear_deferred_move();
 
     // Protected fields:
     clear_place_info();
@@ -5724,13 +5773,26 @@ bool player::airborne() const
         || get_form()->enables_flight();
 }
 
-bool player::rampaging() const
+int player::rampaging() const
 {
-    return you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS)
-            || you.has_mutation(MUT_ROLLPAGE)
-            || you.form == transformation::spider
-            || you.duration[DUR_EXECUTION]
-            || actor::rampaging();
+    int rampage = 0;
+    rampage += actor::rampaging();
+
+    if (you.has_mutation(MUT_STAMPEDE))
+        rampage++;
+
+    if (you.form == transformation::spider)
+        rampage++;
+
+    if (you.duration[DUR_EXECUTION])
+        rampage++;
+
+    rampage = min(3, rampage);
+
+    if (you.unrand_equipped(UNRAND_SEVEN_LEAGUE_BOOTS))
+        rampage = get_los_radius();
+
+    return rampage;
 }
 
 bool player::is_banished() const
@@ -5749,7 +5811,7 @@ bool player::is_sufficiently_rested(bool starting) const
                                 static_cast<int>(activity_interrupt::full_hp)];
     const bool mp_interrupts = Options.activity_interrupts["rest"][
                                 static_cast<int>(activity_interrupt::full_mp)];
-    const bool can_freely_move = you.is_motile() && !you.duration[DUR_BARBS];
+    const bool can_freely_move = !you.cannot_move() && !you.duration[DUR_BARBS];
 
     return (!player_regenerates_hp()
                 || _should_stop_resting(hp, hp_max, !starting)
@@ -5762,7 +5824,7 @@ bool player::is_sufficiently_rested(bool starting) const
 
 bool player::in_water() const
 {
-    return ground_level() && !you.can_water_walk() && feat_is_water(env.grid(pos()));
+    return !airborne() && !you.can_water_walk() && feat_is_water(env.grid(pos()));
 }
 
 bool player::in_liquid() const
@@ -5806,15 +5868,13 @@ bool player::has_any_spells() const
 
 bool player::cannot_speak() const
 {
-    if (silenced(pos()))
+    if (you.is_silenced())
         return true;
 
     if (paralysed() || petrified()) // we allow talking during sleep ;)
         return true;
 
     // No transform that prevents the player from speaking yet.
-    // ... yet setting this would prevent saccing junk and similar activities
-    // for no good reason.
     return false;
 }
 
@@ -5842,7 +5902,7 @@ int player::shout_volume() const
 {
     const int base_noise = 12 + get_form()->shout_volume_modifier;
 
-    return base_noise + 2 * (get_mutation_level(MUT_SCREAM));
+    return base_noise + 4 * (get_mutation_level(MUT_SCREAM));
 }
 
 void player::god_conduct(conduct_type thing_done, int level)
@@ -5850,8 +5910,7 @@ void player::god_conduct(conduct_type thing_done, int level)
     ::did_god_conduct(thing_done, level);
 }
 
-void player::banish(const actor* /*agent*/, const string &who, const int power,
-                    bool force)
+void player::banish(const actor* /*agent*/, const string &who, bool force)
 {
     ASSERT(!crawl_state.game_is_arena());
     if (brdepth[BRANCH_ABYSS] == -1)
@@ -5887,7 +5946,6 @@ void player::banish(const actor* /*agent*/, const string &who, const int power,
 
     banished    = true;
     banished_by = who;
-    banished_power = power;
 }
 
 /*
@@ -5933,6 +5991,11 @@ int player::get_noise_perception(bool adjusted) const
     return BAR_MAX;
 }
 
+bool player::can_be_paralysed() const
+{
+    return !stasis() && !duration[DUR_STUN_IMMUNITY];
+}
+
 bool player::paralysed() const
 {
     return duration[DUR_PARALYSIS];
@@ -5940,12 +6003,35 @@ bool player::paralysed() const
 
 bool player::cannot_act() const
 {
+    return asleep() || paralysed() || petrified()
+            || you.duration[DUR_VEXED]
+            || you.duration[DUR_DAZED];
+}
+
+bool player::helpless() const
+{
     return asleep() || paralysed() || petrified();
 }
 
 bool player::confused() const
 {
     return duration[DUR_CONF];
+}
+
+bool player::is_silenced() const
+{
+    return silenced(you.pos())
+            || you.duration[DUR_FLOODED];
+}
+
+const char* player_silenced_reason()
+{
+    if (silenced(you.pos()))
+        return "silenced";
+    else if (you.duration[DUR_FLOODED])
+        return "unable to breathe";
+    else
+        return "";
 }
 
 bool player::caught() const
@@ -5967,7 +6053,7 @@ bool player::liquefied_ground() const
 {
     return liquefied(pos())
            && you.species != SP_GREY_DRACONIAN
-           && ground_level() && !is_insubstantial();
+           && !airborne() && !is_insubstantial();
 }
 
 /**
@@ -6011,18 +6097,24 @@ void player::shield_block_succeeded(actor *attacker)
         shield_blocks++;
 
     practise_shield_block();
-    if (is_shield(shield()))
-        count_action(CACT_BLOCK, shield()->sub_type);
+    item_def* sh = shield();
+    if (sh)
+        count_action(CACT_BLOCK, sh->sub_type);
     else
         count_action(CACT_BLOCK, -1, BLOCK_OTHER); // non-shield block
 }
 
-bool player::missile_repulsion() const
+int player::missile_repulsion() const
 {
-    return get_mutation_level(MUT_DISTORTION_FIELD) == 3
+    if (get_mutation_level(MUT_DISTORTION_FIELD) == 3
         || you.wearing_ego(OBJ_ARMOUR, SPARM_REPULSION)
         || scan_artefacts(ARTP_RMSL)
-        || have_passive(passive_t::upgraded_storm_shield);
+        || have_passive(passive_t::upgraded_storm_shield))
+    {
+        return REPEL_MISSILES_EV_BONUS;
+    }
+
+    return 0;
 }
 
 /**
@@ -6137,7 +6229,7 @@ int player::skill(skill_type sk, int scale, bool real, bool temp) const
     if (you.form == transformation::walking_scroll
         && sk >= SK_FIRST_MAGIC_SCHOOL && sk <= SK_LAST_MAGIC)
     {
-        level += (10 + get_form()->get_level(10)) * scale / 20;
+        level += walking_scroll_skill_bonus(scale);
     }
 
     if (temp && skill_has_dilettante_penalty(sk))
@@ -6466,10 +6558,23 @@ int player::armour_class_scaled(int scale) const
 void player::refresh_rampage_hints()
 {
     rampage_hints.clear();
-    if (you.rampaging())
-        for (coord_def delta : Compass)
-            if ((delta.x || delta.y) && get_rampage_target(delta))
-                you.rampage_hints.insert(you.pos() + delta);
+    const int rampage = you.rampaging();
+    if (!rampage)
+        return;
+
+    for (coord_def delta : Compass)
+    {
+        if (!(delta.x || delta.y))
+            continue;
+
+        const monster* target = get_rampage_target(delta);
+        if (!target)
+            continue;
+
+        const int dist = min(rampage, (target->pos() - you.pos()).rdist() - 1);
+        for (int i = 1; i <= dist; ++i)
+            you.rampage_hints.insert(you.pos() + delta * i);
+    }
 }
 
  /**
@@ -6798,7 +6903,7 @@ int player::how_chaotic(bool /*check_spells_god*/) const
 bool player::is_unbreathing() const
 {
     return is_nonliving() || is_lifeless_undead()
-           || bool(holiness() & MH_PLANT);
+           || bool(holiness() & MH_PLANT || form == transformation::jelly);
 }
 
 bool player::is_insubstantial() const
@@ -6810,7 +6915,7 @@ bool player::is_insubstantial() const
 
 bool player::is_amorphous() const
 {
-    return you.form == transformation::aqua;
+    return form == transformation::aqua || form == transformation::jelly;
 }
 
 int player::res_corr() const
@@ -6940,7 +7045,7 @@ int player::res_blind() const
 {
     if (bool(holiness() & MH_PLANT))
         return 2;
-    else if (undead_state() != US_ALIVE)
+    else if (undead_state() != US_ALIVE || you.form == transformation::jelly)
         return 1;
     else
         return 0;
@@ -6961,13 +7066,8 @@ int player_willpower(bool temp)
 
     int rm = you.experience_level * species::get_wl_modifier(you.species);
 
-    // randarts
+    // randarts and dragon armour
     rm += WL_PIP * you.scan_artefacts(ARTP_WILLPOWER);
-
-    // body armour
-    const item_def *body_armour = you.body_armour();
-    if (body_armour)
-        rm += armour_type_prop(body_armour->sub_type, ARMF_WILLPOWER) * WL_PIP;
 
     // ego armours
     rm += WL_PIP * you.wearing_ego(OBJ_ARMOUR, SPARM_WILLPOWER);
@@ -7155,13 +7255,18 @@ bool player::nightvision() const
            || you.unrand_equipped(UNRAND_SHADOWS);
 }
 
-int player::reach_range() const
+int player::reach_range(bool include_weapon) const
 {
+    const int bonus = you.form == transformation::aqua ? 2 : 0;
+
+    if (!include_weapon)
+        return 1 + bonus;
+
     const item_def *wpn = weapon();
     const item_def *off = offhand_weapon();
     const int wpn_reach = wpn ? weapon_reach(*wpn) : 1;
     const int off_reach = off ? weapon_reach(*off) : 1;
-    const int bonus = you.form == transformation::aqua ? 2 : 0;
+
     return max(wpn_reach, off_reach) + bonus;
 }
 
@@ -7198,7 +7303,8 @@ void player::teleport(bool now, bool wizard_tele)
 
 int player::hurt(const actor *agent, int amount, beam_type flavour,
                  kill_method_type kill_type, string source, string aux,
-                 bool /*cleanup_dead*/, bool /*attacker_effects*/)
+                 bool /*cleanup_dead*/, bool /*attacker_effects*/,
+                 bool /*is_attack_damage*/)
 {
     // We ignore cleanup_dead here.
     if (!agent)
@@ -7207,13 +7313,12 @@ int player::hurt(const actor *agent, int amount, beam_type flavour,
         // to a player from a dead monster. We should probably not do that,
         // but it could be tricky to fix, so for now let's at least avoid
         // a crash even if it does mean funny death messages.
-        ouch(amount, kill_type, MID_NOBODY, aux.c_str(), false, source.c_str(),
+        ouch(amount, kill_type, MID_NOBODY, aux.c_str(), source.c_str(),
              false, flavour == BEAM_BAT_CLOUD);
     }
     else
     {
-        ouch(amount, kill_type, agent->mid, aux.c_str(),
-             agent->visible_to(this), source.c_str(), false,
+        ouch(amount, kill_type, agent->mid, aux.c_str(), source.c_str(), false,
              flavour == BEAM_BAT_CLOUD);
     }
 
@@ -7307,10 +7412,9 @@ void player::confuse(actor */*who*/, int str)
 /**
  * Paralyse the player for str turns.
  *
- *  Duration is capped at 13.
  *
  * @param who Pointer to the actor who paralysed the player.
- * @param str The number of turns the paralysis will last.
+ * @param str The number of turns the paralysis will last (plus 5 aut).
  * @param source Description of the source of the paralysis.
  */
 void player::paralyse(const actor *who, int str, string source)
@@ -7323,49 +7427,47 @@ void player::paralyse(const actor *who, int str, string source)
         return;
     }
 
-    // The who check has an effect in a few cases, most notably making
-    // Death's Door + Borg's paralysis unblockable.
-    if (who && (duration[DUR_PARALYSIS] || duration[DUR_STUN_IMMUNITY]))
+    // The player cannot use stun immunity to avoid self-para from Borg+DDoor.
+    if (who && who != &you
+        && (duration[DUR_PARALYSIS] || duration[DUR_STUN_IMMUNITY]))
     {
         mpr("You shrug off the repeated attempt to disable you.");
         return;
     }
-
-    int &paralysis(duration[DUR_PARALYSIS]);
-
-    const bool use_actor_name = source.empty() && who != nullptr;
-    if (use_actor_name)
-        source = who->name(DESC_A);
-
-    if (!paralysis && !source.empty())
-    {
-        take_note(Note(NOTE_PARALYSIS, str, 0, source));
-        // use the real name here even for invisible monsters
-        props[DISABLED_BY_KEY] = use_actor_name ? who->name(DESC_A, true)
-                                               : source;
-    }
-    else
-        props.erase(DISABLED_BY_KEY);
 
     you.wake_up();
 
     mpr("You suddenly lose the ability to move!");
     _pruneify();
 
-    paralysis = min(str, 13) * BASELINE_DELAY;
+    you.duration[DUR_PARALYSIS] = str * BASELINE_DELAY + 5;
 
     stop_delay(true, true);
-    stop_directly_constricting_all(false);
+    stop_directly_constricting_all();
     stop_channelling_spells();
     redraw_armour_class = true;
     redraw_evasion = true;
+
+    const bool use_actor_name = source.empty() && who != nullptr;
+    if (use_actor_name)
+        source = who->name(DESC_A);
+
+    if (!source.empty())
+    {
+        take_note(Note(NOTE_PARALYSIS, you.duration[DUR_PARALYSIS], 0, source));
+        // use the real name here even for invisible monsters
+        props[DISABLED_BY_KEY] = use_actor_name ? who->name(DESC_A, true)
+                                               : source;
+    }
+    else
+        props.erase(DISABLED_BY_KEY);
 }
 
 void player::petrify(const actor *who, bool force)
 {
     ASSERT(!crawl_state.game_is_arena());
 
-    if (res_petrify() && !force)
+    if (res_petrify() && !force || petrifying() || petrified())
     {
         canned_msg(MSG_YOU_UNAFFECTED);
         return;
@@ -7380,17 +7482,9 @@ void player::petrify(const actor *who, bool force)
     // Petrification always wakes you up
     you.wake_up();
 
-    if (petrifying())
-    {
-        mpr("Your limbs have turned to stone.");
-        duration[DUR_PETRIFYING] = 1;
-        return;
-    }
-
-    if (petrified())
-        return;
-
-    duration[DUR_PETRIFYING] = 3 * BASELINE_DELAY;
+    // Give the player a standard 30 aut to react after starting to petrify,
+    // instead of sometimes getting much less due to what they were doing last turn.
+    duration[DUR_PETRIFYING] = 30 + you.time_taken;
 
     if (who)
         props[DISABLED_BY_KEY] = who->name(DESC_A, true);
@@ -7437,13 +7531,10 @@ bool player::vex(const actor* who, int dur, string source, string special_msg)
         mprf(MSGCH_WARN, "You feel overwhelmed by frustration!");
     you.duration[DUR_VEXED] = dur * BASELINE_DELAY;
 
-    int &vex(duration[DUR_VEXED]);
-
     const bool use_actor_name = source.empty() && who != nullptr;
     if (use_actor_name)
         source = who->name(DESC_A);
-
-    if (vex && !source.empty())
+    if (!source.empty())
     {
         take_note(Note(NOTE_VEXED, dur, 0, source));
         props[DISABLED_BY_KEY] = use_actor_name ? who->name(DESC_A, true)
@@ -7453,7 +7544,7 @@ bool player::vex(const actor* who, int dur, string source, string special_msg)
         props.erase(DISABLED_BY_KEY);
 
     stop_delay(true, true);
-    stop_directly_constricting_all(false);
+    stop_directly_constricting_all();
     stop_channelling_spells();
 
     return true;
@@ -7591,7 +7682,7 @@ int player::usable_tentacles() const
     if (numtentacle == 0)
         return false;
 
-    int free_tentacles = numtentacle - num_constricting();
+    int free_tentacles = numtentacle - num_constricting(CONSTRICT_MELEE);
 
     if (shield())
         free_tentacles -= 2;
@@ -7603,7 +7694,7 @@ int player::usable_tentacles() const
         free_tentacles -= 2 * hands_req + 2;
     }
 
-    return free_tentacles;
+    return max(0, free_tentacles);
 }
 
 int player::has_pseudopods(bool allow_tran) const
@@ -7687,6 +7778,13 @@ bool player::innate_sinv() const
 
     if (get_mutation_level(MUT_EYEBALLS) == 3)
         return true;
+
+    if (form == transformation::jelly
+        || form == transformation::sphinx
+        || form == transformation::vampire)
+    {
+        return true;
+    }
 
     if (have_passive(passive_t::sinv))
         return true;
@@ -7828,10 +7926,10 @@ bool player::is_stationary() const
     return form == transformation::tree;
 }
 
-bool player::is_motile() const
+bool player::cannot_move() const
 {
-    return !is_stationary() && !you.duration[DUR_NO_MOMENTUM]
-                            && !you.duration[DUR_FORTRESS_BLAST_TIMER];
+    return is_stationary() || you.duration[DUR_NO_MOMENTUM]
+                           || you.duration[DUR_FORTRESS_BLAST_TIMER];
 }
 
 bool player::malmutate(const actor* /*source*/, const string &reason)
@@ -7851,7 +7949,7 @@ bool player::malmutate(const actor* /*source*/, const string &reason)
     return false;
 }
 
-bool player::polymorph(int dur, bool allow_immobile)
+bool player::polymorph(int dur)
 {
     ASSERT(!crawl_state.game_is_arena());
 
@@ -7863,13 +7961,15 @@ bool player::polymorph(int dur, bool allow_immobile)
     vector<transformation> forms = {
         transformation::bat,
         transformation::wisp,
-        transformation::pig,
     };
-    if (allow_immobile)
-    {
+
+    // Don't polymorph the player into something that would require emergency flight.
+    if (!feat_dangerous_for_form(transformation::pig, env.grid(you.pos())))
+        forms.emplace_back(transformation::pig);
+    if (!feat_dangerous_for_form(transformation::tree, env.grid(you.pos())))
         forms.emplace_back(transformation::tree);
+    if (!feat_dangerous_for_form(transformation::fungus, env.grid(you.pos())))
         forms.emplace_back(transformation::fungus);
-    }
 
     for (int tries = 0; tries < 3; tries++)
     {
@@ -8007,7 +8107,7 @@ void player::put_to_sleep(actor* source, int dur, bool hibernate)
     mpr("You fall asleep.");
     _pruneify();
 
-    stop_directly_constricting_all(false);
+    stop_directly_constricting_all();
     stop_channelling_spells();
     stop_delay(true, true);
     flash_view(UA_MONSTER, DARKGREY);
@@ -8102,10 +8202,10 @@ bool player::can_do_shaft_ability(bool quiet) const
         return false;
     }
 
-    if (!you.is_motile())
+    if (you.cannot_move())
     {
         if (!quiet)
-            mpr("You can't shaft yourself while stuck.");
+            mpr("You can't shaft yourself while unable to move.");
         return false;
     }
 
@@ -8241,10 +8341,10 @@ bool player::attempt_escape()
     ASSERT(themonst);
     escape_attempts += 1;
 
-    const auto constr_typ = get_constrict_type();
     const string object
-        = constr_typ == CONSTRICT_ROOTS ? "the roots'"
-          : constr_typ == CONSTRICT_BVC ? "the zombie hands'"
+        = constricted_type == CONSTRICT_ROOTS      ? "the roots'"
+          : constricted_type == CONSTRICT_BVC      ? "the zombie hands'"
+          : constricted_type == CONSTRICT_ENTANGLE ? "the vines'"
                                         : themonst->name(DESC_ITS, true);
 
     if (x_chance_in_y(_constriction_escape_chance(escape_attempts), 100))
@@ -8254,7 +8354,7 @@ bool player::attempt_escape()
         // Stun the monster we struggled again and prevent the player from being
         // constricted for several turns (so that they are guaranteed to be able
         // to make it up the stairs after pulling away this way)
-        if (constr_typ == CONSTRICT_MELEE)
+        if (constricted_type == CONSTRICT_MELEE)
         {
             themonst->speed_increment -= 10;
             you.duration[DUR_CONSTRICTION_IMMUNITY] = 20;
@@ -8322,7 +8422,7 @@ bool player::made_nervous_by(const monster *mons)
     if (!mons_is_wandering(*mons)
         && !mons->asleep()
         && !mons->confused()
-        && !mons->cannot_act()
+        && !mons->helpless()
         && mons_is_threatening(*mons)
         && !mons->wont_attack()
         && !mons->neutral())
@@ -8347,7 +8447,7 @@ void player::diminish(const actor */*attacker*/, int pow)
     if (!duration[DUR_DIMINISHED_SPELLS])
         mprf(MSGCH_WARN, "You feel your spells grow feeble.");
     else
-        mprf(MSGCH_WARN, "You feel as though your spells will be weakened yet longer.");
+        mprf(MSGCH_WARN, "You feel as though your spells will be weakened for longer.");
 
     increase_duration(DUR_DIMINISHED_SPELLS, pow + random2(pow + 3), 50);
 }
@@ -8364,10 +8464,21 @@ bool player::strip_willpower(actor */*attacker*/, int dur, bool quiet)
     return true;
 }
 
+bool player::drain_magic(actor */*attacker*/, int pow)
+{
+    int amount = min(you.magic_points, random2avg(pow / 8, 3));
+    if (!amount)
+        return false;
+
+    mprf(MSGCH_WARN, "You feel your power leaking away.");
+    drain_mp(amount);
+    return true;
+}
+
 void player::daze(int dur)
 {
     stop_delay(true, true);
-    stop_directly_constricting_all(false);
+    stop_directly_constricting_all();
     stop_channelling_spells();
 
     you.duration[DUR_DAZED] += dur * BASELINE_DELAY;
@@ -8384,6 +8495,24 @@ void player::vitrify(const actor* /*attacker*/, int dur, bool quiet)
     }
 
     you.increase_duration(DUR_VITRIFIED, dur, 50);
+}
+
+bool player::floodify(const actor* attacker, int dur, const char* substance)
+{
+    if (res_water_drowning() || dur <= 0
+        || duration[DUR_FLOODED] || duration[DUR_FLOODED_IMMUNITY])
+    {
+        return false;
+    }
+
+    duration[DUR_FLOODED] = dur;
+    props[WATER_HOLD_SUBSTANCE_KEY] = substance;
+    props[WATER_HOLDER_KEY].get_int() = attacker->mid;
+    props[WATER_HOLDER_NAME_KEY] = attacker->name(DESC_A, true);
+
+    mprf(MSGCH_WARN, "%s floods into your lungs!", substance);
+
+    return true;
 }
 
 /**
@@ -8442,8 +8571,7 @@ static string _constriction_description()
                               num_free_tentacles > 1 ? "s" : "");
     }
 
-    const auto constr_typ = you.get_constrict_type();
-    if (constr_typ == CONSTRICT_MELEE)
+    if (you.constricted_type == CONSTRICT_MELEE)
     {
         const monster * const constrictor = monster_by_mid(you.constricted_by);
         ASSERT(constrictor);
@@ -8462,7 +8590,7 @@ static string _constriction_description()
             monster *whom = monster_by_mid(entry);
             ASSERT(whom);
 
-            if (whom->get_constrict_type() != CONSTRICT_MELEE)
+            if (whom->constricted_type != CONSTRICT_MELEE)
                 continue;
 
             c_name.push_back(whom->name(DESC_A));
@@ -8645,6 +8773,8 @@ void player::rev_up(int dur)
 
     if (you.wearing_ego(OBJ_GIZMOS, SPGIZMO_REVGUARD))
         you.redraw_armour_class = true;
+
+    you.did_trigger(DID_REV_UP);
 }
 
 void player_open_door(coord_def doorpos)
@@ -9172,9 +9302,8 @@ static bool _ench_triggers_trickster(enchant_type ench)
         case ENCH_MAGNETISED:
         case ENCH_BLINKITIS:
         case ENCH_PAIN_BOND:
-        case ENCH_VILE_CLUTCH:
+        case ENCH_CONSTRICTED:
         case ENCH_DRAINED:
-        case ENCH_GRASPING_ROOTS:
         case ENCH_WRETCHED:
         case ENCH_DEEP_SLEEP:
         case ENCH_VEXED:
@@ -9344,4 +9473,23 @@ item_def* player::active_talisman() const
         return &you.inv[cur_talisman];
     else
         return nullptr;
+}
+
+void player::track_reprisal(reprisal_type rtype, mid_t target_mid)
+{
+    reprisals.push_back({target_mid, rtype});
+}
+
+bool player::did_reprisal(reprisal_type rtype, mid_t target_mid)
+{
+    for (const auto& entry : reprisals)
+        if (entry.first == target_mid && entry.second == rtype)
+            return true;
+
+    return false;
+}
+
+void player::did_trigger(player_trigger_type trigger)
+{
+    triggers_done[trigger]++;
 }

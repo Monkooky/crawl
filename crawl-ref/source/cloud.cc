@@ -674,7 +674,7 @@ static void _maybe_leave_water(const coord_def pos)
     if (env.grid(pos) != DNGN_FLOOR || !one_chance_in(5))
         return;
 
-    if (you.pos() == pos && you.ground_level())
+    if (you.pos() == pos && !you.airborne())
         mpr("The rain has left you waist-deep in water!");
     temp_change_terrain(pos, DNGN_SHALLOW_WATER,
                         random_range(500, 1000),
@@ -759,7 +759,7 @@ bool cloud_is_stronger(cloud_type ct, const cloud_struct& cloud)
  * @param cl_type     The type of cloud to place.
  * @param ctarget     The location of the cloud.
  * @param cl_range    How many turns the cloud will take to decay.
- * @param agent       Any agent that may have caused the cloud. If this is the
+ * @param orig_agent  Any agent that may have caused the cloud. If this is the
  *                    player, god conducts are applied.
  * @param spread_rate How quickly the cloud spreads.
  * @param excl_rad    How large of an exclusion radius to make around the
@@ -770,7 +770,7 @@ bool cloud_is_stronger(cloud_type ct, const cloud_struct& cloud)
  * @return  Whether a cloud was actually placed at this location.
 */
 bool place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
-                 const actor *agent, int spread_rate, int excl_rad,
+                 const actor *orig_agent, int spread_rate, int excl_rad,
                  bool do_conducts)
 {
     if (!in_bounds(ctarget) || cell_is_solid(ctarget))
@@ -789,6 +789,12 @@ bool place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
         return false;
     }
 
+    // Pretend clouds made by a marionette are from the player
+    // (Except for purposes of conducts).
+    const actor* agent = orig_agent && orig_agent->temp_attitude() == ATT_MARIONETTE
+                            ? &you
+                            : orig_agent;
+
     const monster * const mons = monster_at(ctarget);
 
     god_conduct_trigger conducts[3];
@@ -798,6 +804,7 @@ bool place_cloud(cloud_type cl_type, const coord_def& ctarget, int cl_range,
     if (agent && agent->is_player())
     {
         if (do_conducts
+            && orig_agent == &you
             && mons && mons->alive()
             && !actor_cloud_immune(*mons, cl_type))
         {
@@ -1011,17 +1018,10 @@ bool actor_cloud_immune(const actor &act, const cloud_struct &cloud)
     if (actor_cloud_immune(act, cloud.type))
         return true;
 
-    const bool player = act.is_player();
-
-    if (!player && never_harm_monster(&you, act.as_monster())
-        && (cloud.whose == KC_YOU || cloud.whose == KC_FRIENDLY)
-        && (act.as_monster()->friendly() || act.as_monster()->neutral())
-        && (cloud.whose == KC_YOU || cloud.whose == KC_FRIENDLY))
-    {
+    if (!could_harm(cloud.agent(), &act))
         return true;
-    }
 
-    if (!player && have_passive(passive_t::cloud_immunity)
+    if (have_passive(passive_t::cloud_immunity)
         && act.was_created_by(MON_SUMM_AID))
     {
         return true;
@@ -1120,7 +1120,7 @@ static bool _actor_apply_cloud_side_effects(actor *act,
     {
         if (player)
         {
-            if (random2(55) - 13 >= you.experience_level)
+            if (random2(62) - 13 >= you.experience_level)
             {
                 you.petrify(cloud.agent());
                 return true;
@@ -1257,7 +1257,7 @@ static bool _actor_apply_cloud_side_effects(actor *act,
         else
         {
             monster* mon = act->as_monster();
-            mon->add_ench(mon_enchant(ENCH_DROWSY, 0, cloud.agent(), random_range(25, 40)));
+            mon->add_ench(mon_enchant(ENCH_DROWSY, cloud.agent(), random_range(25, 40)));
             if (mon->get_ench(ENCH_DROWSY).duration >= 100)
             {
                 mon->del_ench(ENCH_DROWSY);
@@ -1366,19 +1366,31 @@ static void _actor_apply_cloud(actor *act, cloud_struct &cloud)
     if (player && cloud_max_base_damage > 0 && resist > 0)
         canned_msg(MSG_YOU_RESIST);
 
+    // Get the cloud's agent now as _actor_apply_cloud_side_effects can delete
+    // blastmotes clouds
+    actor* oppressor = cloud.agent();
+
     const beam_type cloud_flavour = _cloud2beam(cloud.type);
     if (cloud_flavour != BEAM_NONE)
-        act->expose_to_element(cloud_flavour, 7, cloud.agent());
+        act->expose_to_element(cloud_flavour, 7, oppressor);
 
     const bool side_effects =
         _actor_apply_cloud_side_effects(act, cloud, final_damage);
 
     if (!player && (side_effects || final_damage > 0))
-        behaviour_event(mons, ME_DISTURB, 0, act->pos());
+    {
+        if (oppressor && oppressor->alive())
+        {
+            // Alert the monster to the oppressor but don't give away their
+            // position.
+            behaviour_event(mons, ME_ALERT, oppressor, act->pos());
+        }
+        else
+            behaviour_event(mons, ME_DISTURB, 0, act->pos());
+    }
 
     if (final_damage)
     {
-        actor *oppressor = cloud.agent();
         const string oppr_name =
             oppressor ? " "+apostrophise(oppressor->name(DESC_THE))
                       : "";
@@ -2079,7 +2091,7 @@ static const vector<chaos_effect> chaos_effects = {
     { "ensnaring", 3, [](const actor &victim) {
         return !victim.is_web_immune(); },
         BEAM_NONE, [](actor* victim, actor* /*source*/) {
-           ensnare(victim);
+           victim->trap_in_web();
            return you.can_see(*victim);
        },
     },
@@ -2108,7 +2120,7 @@ static const vector<chaos_effect> chaos_effects = {
                 blind_player(random_range(7, 12), ETC_RANDOM);
             else
             {
-                victim->as_monster()->add_ench(mon_enchant(ENCH_BLIND, 1, source,
+                victim->as_monster()->add_ench(mon_enchant(ENCH_BLIND, source,
                                                random_range(7, 12) * BASELINE_DELAY));
             }
             return you.can_see(*victim);
@@ -2188,4 +2200,19 @@ bool chaos_affects_actor(actor* victim, actor* source)
     }
 
     return obvious_effect;
+}
+
+bool get_vortex_phase(const coord_def& loc)
+{
+    coord_def center = get_cloud_originator(loc);
+    if (center.origin())
+        return ui_random(2); // source died/went away
+    else
+    {
+        int x = loc.x - center.x;
+        int y = loc.y - center.y;
+        double dir = atan2(x, y) / PI;
+        double dist = sqrt(x * x + y * y);
+        return ((int)floor(dir * 2 + dist * 0.33 - (you.frame_no % 54) / 2.7)) & 1;
+    }
 }

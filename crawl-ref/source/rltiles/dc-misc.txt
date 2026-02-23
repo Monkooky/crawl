@@ -124,6 +124,11 @@ bomblet_blast1
 paragon_tempest0 BOLT_PARAGON_TEMPEST
 paragon_tempest1
 
+sundering0 BOLT_SUNDERING
+sundering1
+sundering2
+sundering3
+
 # Necromantic bolts
 drain0 BOLT_DRAIN
 drain1
@@ -224,7 +229,9 @@ splinters_thornwood7
 
 entropic_weave BOLT_ENTROPIC_WEAVE
 
+antimagic_gaze BOLT_ANTIMAGIC_GAZE
 draining_gaze BOLT_DRAINING_GAZE
+draining_smirk BOLT_DRAINING_SMIRK
 
 bolas BOLT_BOLAS
 
@@ -324,6 +331,11 @@ blood_arrow7
 ostracise BOLT_OSTRACISE
 
 umbral_torchlight BOLT_UMBRAL_TORCHLIGHT
+
+wind_hush0 BOLT_WIND_HUSH
+wind_hush1
+wind_hush2
+wind_hush3
 
 ###### Priority indicators (for Fedhas' growth)
 indicator_1 INDICATOR

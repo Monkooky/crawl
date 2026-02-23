@@ -20,10 +20,6 @@ posiadacza tej broni w śliwę. Na szczęście, klątwa ta działa bardzo powoli
 można używać tej glewii przez krótki czas bez konsekwencji gorszych niż lekko
 fioletowa skóra i parę zmarszczek.
 %%%%
-Sword of Power
-
-Nagradza silnych siłą, a słabych słabością.
-%%%%
 Staff of Wucad Mu
 
 Jego wartość bojowa zmienia się proporcjonalnie do inteligencji swego
@@ -227,7 +223,7 @@ amulet of Cekugob
 Ten wisiorek to dziwne kawałek kryształu na sznurku, z nietypowym zestawem
 mocy.
 %%%%
-amulet of the Four Winds
+amulet of Tranquility
 
 Ten wisior z najczystszego jadeitu daje nosicielowi mistyczną siłę aby odeprzeć
 wrogie uroki.

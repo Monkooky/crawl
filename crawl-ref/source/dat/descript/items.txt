@@ -6,12 +6,12 @@ much protection as the armour made from the scales of some larger dragons, it is
 somewhat lighter and less encumbering. It is also remarkably smooth, letting
 corrosive slime flow off it like water.
 %%%%
-amulet of alchemy
+amulet of chemistry
 
-An amulet that enhances the power of the wearer's alchemy spells and also allows
-them to extract small amounts of magical energy from any potion they drink. The
-latter effect only functions once the amulet has attuned itself to the wearer's
-body with full reserves of magic.
+An amulet which allows the wearer to extract small amounts of magical energy
+from any potion they drink and also enhances the power of their alchemy spells.
+The magic restoration effect requires the amulet to attune itself to the
+wearer's body while their reserves of magic are full.
 %%%%
 amulet of dissipation
 
@@ -91,7 +91,7 @@ A long pole with an enormous, cleaving blade on one end.
 %%%%
 barding
 
-Armour for the scaly midsections of nagas and armataurs.
+Armour for the scaly midsections of nagas and centaurs.
 %%%%
 battleaxe
 
@@ -99,21 +99,18 @@ A large war axe with a formidable double-sided head.
 %%%%
 blade talisman
 
-A jagged cluster of blades, almost impossible to grasp without injury.
-{{
-    local hands = you.hand() .. "s"
-    return "Causes long, needle-thin blades to grow from the " ..
-           "wearer's " .. hands
-}}, and smaller fragments of metal to grow inside their body, deforming them
-and reducing the effectiveness of body armour. Shapeshifting skill mitigates
-and eventually eliminates the latter effect, as well as increasing damage
+A jagged cluster of blades, almost impossible to grasp without injury. Causes
+long, needle-thin blades to grow from the wearer's body, allowing them to
+perform rapid auxiliary melee attacks and even parry blows. Having so many
+fragments of metal inside one's body reduces the effectiveness of body armour,
+but Shapeshifting skill mitigates this effect as well as increases the damage
 dealt.
 %%%%
 book of air
 
 A primer on the elemental magics of Air. The great minotaur hero Vuxhurn, given
 a copy of this book while trapped atop the tower of a wizard with a particularly
-perverse sense of humor, used its pages to construct a rudimentary glider and
+perverse sense of humour, used its pages to construct a rudimentary glider and
 soared to freedom.
 %%%%
 book of annihilations
@@ -130,7 +127,7 @@ the other side.
 %%%%
 book of battle
 
-An astonishingly vain and self-aggrandizing work. The author claims credit for a
+An astonishingly vain and self-aggrandising work. The author claims credit for a
 wide swathe of weapon-augmenting magics, but seems to have misunderstood or
 misrepresented most of them. Only a few of the spells described in the book
 actually work.
@@ -210,7 +207,7 @@ wizarding community to be seen with this book in one's collection.
 %%%%
 book of decay
 
-A book of necromancy, dictated by the god Kikubaaqudgha to an unfortunate
+A book of Necromancy, dictated by the god Kikubaaqudgha to an unfortunate
 apostle across the course of a nine-day fugue. The necromancer is said to have
 finished the dread work with their own life's blood... but of course this is
 just a copy, written in almost entirely normal ink.
@@ -269,9 +266,14 @@ recommended to wear a pair of gardening gloves.
 %%%%
 book of the grave
 
-A heavy tome whose vellum smells faintly of dirt and decay. Those who touch it
-frequently report a palpable sense of unease, as if something unwholesome were
-buried between its very pages.
+A heavy tome of necromantic spells. Those who touch it frequently report a
+palpable sense of unease, as if something unwholesome were buried between its
+very pages.
+{{
+    if you.can_smell() then
+        return "Its vellum smells faintly of dirt and decay."
+    end
+}}
 %%%%
 book of hexes
 
@@ -360,9 +362,13 @@ page, clearly reserving this book for only the tackiest of wizards.
 %%%%
 book of spontaneous combustion
 
-A heavy tome whose desiccated pages smell faintly of sulphur. The ink with which
-it was written is wildly flammable and care must be taken even opening it, but
-the power of the spells described therein is undeniable.
+A heavy tome written with wildly flammable ink. Care must be taken even opening
+it, but the power of the spells described therein is undeniable.
+{{
+    if you.can_smell() then
+        return "Its desiccated pages smell faintly of sulphur."
+    end
+}}
 %%%%
 book of the spheres
 
@@ -421,9 +427,11 @@ being described.
 book of transmutation
 
 A meticulous compendium of research notes, filled with formulae for decomposing
-and reconstituting all manner of substances. The author appears to have had a
-strange obsession with becoming a spider, but even if their ultimate aim eluded
-them, many of the spells detailed therein are nonetheless quite practical.
+and reconstituting all manner of substances. It was written by one of the
+legendary alchemists among the sludge elves, before that species mysteriously
+vanished from the world. The author appears to have had a strange obsession with
+becoming a butterfly, but even if their ultimate aim eluded them, many of the
+spells detailed therein are nonetheless quite practical.
 %%%%
 book of the tundra
 
@@ -625,6 +633,19 @@ earthy gem
 
 Deep within this gem, flowing leaves and swaying branches seem to lurk. And
 here, a bone picked clean - there, a predator's eyes, staring hungrily out..?
+%%%%
+eel talisman
+
+A strange sea fossil, adorned with abalone and pearl.
+{{
+    local hands = you.hand() .. "s"
+    return "Causes the wearer's " .. hands
+}}
+to transform into a pair of wriggling electric eels that sometimes discharge
+arcs of electricity through connected targets when used to strike enemies. When
+the wearer's health becomes dangerously low, they will discharge an even more
+violent voltage.
+%%%%
 %%%%
 eggplant
 
@@ -942,9 +963,10 @@ maw talisman
 
 A miniature, desiccated head of some ferocious and hopefully extinct creature.
 Transforms the wearer's midsection into a giant mouth, gnashing and ready to devour
-foes. The mouth may devour slain creatures, healing the wearer to an extent increased
-by the wearer's Shapeshifting skill and the power of the creature eaten. Skill also
-increases the damage done by the maw.
+foes. This maw confers a powerful bite attack which scales additionally with the
+wearer's own strength and can devour slain creatures to temporariy increase
+one's regeneration. Unfortunately, it also confers such profound hunger that it
+can be difficult to pull oneself away from particularly appetising foes.
 %%%%
 medusa talisman
 
@@ -987,7 +1009,7 @@ my sojourn through swampland
 While purporting itself to be the personal account of a famous naturalist, it
 becomes clear upon reading that this book was compiled from multiple unrelated
 sources, including notes from a stagehand of a travelling magical circus. The
-travelogue may be fictitious, but but some of the spell diagrams carefully
+travelogue may be fictitious, but some of the spell diagrams carefully
 transcribed in the margins seem quite real.
 %%%%
 necronomicon
@@ -1165,7 +1187,7 @@ undulate between flesh and bone and perhaps even metal. A sufficiently skilled
 shapeshifter can stabilise it into a useable - if unpredictable - form.
 
 (If your Shapeshifting skill is at least 6, attempting to put this on will
-transform it into a random one of: Rimehorn, Scarab, Medusa, or Maw talismans.)
+transform it into a random one of: Rimehorn, Scarab, Medusa, or Spore talismans.)
 %%%%
 quad damage
 
@@ -1187,7 +1209,8 @@ willpower and magical modification of itself - it cannot be enchanted.
 quick blade
 
 A dagger with an uncanny enchantment upon it, allowing it to strike twice
-for every blow its wielder makes.
+for every blow its wielder makes. It takes great skill to use to its full
+potential.
 %%%%
 quill talisman
 
@@ -1385,8 +1408,9 @@ replaced with a different one, and any brand forbidden by your current god will
 not be chosen. Artefacts cannot be branded in this way.
 
 Melee weapons will commonly be branded with the flaming, freezing, heavy,
-venom or protection brand, and rarely with the draining, electrocution,
-spectral, vampiric or chaos brand.
+venom or protection brand (or with the special brand exclusive to the category
+of weapon being branded), and rarely with the draining, electrocution, spectral,
+vampiric or chaos brand.
 
 Ranged weapons will commonly be branded with the flaming, freezing, heavy or
 draining brand, and rarely with the electrocution or chaos brand.
@@ -1546,8 +1570,18 @@ spider talisman
 
 A strange charm made from shed arachnid exoskeletons bound together with silk.
 Transforms the wearer into an agile jumping spider who can move swiftly towards
-foes and inflict grievous damage on any it catches unaware. Its attacks can
-also ensnare its enemies in webs and it can leap briskly away from many dangers.
+foes and inflict grievous damage on any it catches unaware. It cannot be
+ensnared by webs, but its attacks can ensnare its enemies in them. It can also
+leap briskly away from many dangers.
+%%%%
+spore talisman
+
+A small charm made from a still-living mushroom. Transforms one of the wearer's
+arms and parts of their lower body into a vibrant mass of multicoloured fungus.
+Melee attacks in this form may release spores that weaken their target, as well
+as cause mushrooms to sprout on the ground behind them which will release their
+own bursts of dazing spores if allowed to grow. Shapeshifting skill increases
+the durability of these mushrooms as well as their damage.
 %%%%
 staff of air
 

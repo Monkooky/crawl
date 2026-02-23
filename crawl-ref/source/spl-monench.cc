@@ -40,7 +40,7 @@ int englaciate(coord_def where, int pow, actor *agent)
     monster* mons = victim->as_monster();
 
     // Skip some ineligable monster categories
-    if (victim->is_peripheral() || never_harm_monster(agent, mons))
+    if (victim->is_peripheral() || !could_harm(agent, mons))
         return 0;
 
     if (victim->res_cold() > 0)
@@ -95,20 +95,16 @@ spret cast_englaciation(int pow, bool fail)
  *  @param source The actor responsible for this.
  *  @returns true if it got backlit (even if it was already).
  */
-bool backlight_monster(monster* mons, const actor* source)
+bool corona_monster(monster* mons, const actor* source)
 {
-    const mon_enchant bklt = mons->get_ench(ENCH_CORONA);
-    const mon_enchant zin_bklt = mons->get_ench(ENCH_SILVER_CORONA);
-    const int lvl = bklt.degree + zin_bklt.degree;
+    const bool was_glowing = mons->backlit();
 
-    mons->add_ench(mon_enchant(ENCH_CORONA, 1, source));
+    mons->add_ench(mon_enchant(ENCH_CORONA, source));
 
-    if (lvl == 0)
+    if (!was_glowing)
         simple_monster_message(*mons, " is outlined in light.");
-    else if (lvl == 4)
-        simple_monster_message(*mons, " glows brighter for a moment.");
     else
-        simple_monster_message(*mons, " glows brighter.");
+        simple_monster_message(*mons, " glows brighter for a moment.");
 
     return true;
 }
@@ -118,7 +114,7 @@ bool do_slow_monster(monster& mon, const actor* agent, int dur)
     if (mon.stasis())
         return true;
 
-    if (mon.add_ench(mon_enchant(ENCH_SLOW, 0, agent, dur)))
+    if (mon.add_ench(mon_enchant(ENCH_SLOW, agent, dur)))
     {
         if (!mon.paralysed() && !mon.petrified()
             && simple_monster_message(mon, " seems to slow down."))
@@ -132,7 +128,7 @@ bool do_slow_monster(monster& mon, const actor* agent, int dur)
 
 bool silence_monster(monster& mon, const actor* agent, int dur)
 {
-    if (mon.add_ench(mon_enchant(ENCH_MUTE, 0, agent, dur)))
+    if (mon.add_ench(mon_enchant(ENCH_MUTE, agent, dur)))
     {
         simple_monster_message(mon, " loses the ability to speak.");
         return true;
@@ -170,14 +166,8 @@ bool enfeeble_monster(monster &mon, int pow)
     {
         if (hex == ENCH_DAZED)
             mon.daze(random_range(3, 5));
-        else if (mon.has_ench(hex))
-        {
-            mon_enchant ench = mon.get_ench(hex);
-            ench.duration = max(dur * BASELINE_DELAY, ench.duration);
-            mon.update_ench(ench);
-        }
         else
-            mon.add_ench(mon_enchant(hex, 0, &you, dur * BASELINE_DELAY));
+            mon.add_ench(mon_enchant(hex, &you, dur * BASELINE_DELAY), false);
     }
 
     if (res_margin > 0)
@@ -244,27 +234,18 @@ bool start_ranged_constriction(actor& caster, actor& target, int duration,
     if (!caster.can_constrict(target, type))
         return false;
 
-    if (target.is_player())
+    if (you.can_see(target))
     {
+        string msg;
         if (type == CONSTRICT_ROOTS)
-        {
-            you.increase_duration(DUR_GRASPING_ROOTS, duration);
-            mprf(MSGCH_WARN, "The grasping roots grab you!");
-        }
+            msg = make_stringf("The roots grab %s!", target.name(DESC_THE).c_str());
         else if (type == CONSTRICT_BVC)
-        {
-            you.increase_duration(DUR_VILE_CLUTCH, duration);
-            mprf(MSGCH_WARN, "Zombie hands grab you from below!");
-        }
-        caster.start_constricting(you);
+            msg = make_stringf("Zombie hands grab %s from below!", target.name(DESC_THE).c_str());
+
+        mprf(target.is_player() ? MSGCH_WARN : MSGCH_PLAIN, "%s", msg.c_str());
     }
-    else
-    {
-        enchant_type etype = (type == CONSTRICT_ROOTS ? ENCH_GRASPING_ROOTS
-                                                      : ENCH_VILE_CLUTCH);
-        auto ench = mon_enchant(etype, 0, &caster, duration * BASELINE_DELAY);
-        target.as_monster()->add_ench(ench);
-    }
+
+    caster.start_constricting(target, type, duration);
 
     return true;
 }
@@ -297,7 +278,7 @@ bool maybe_spread_rimeblight(monster& victim, int power)
 {
     if (!victim.has_ench(ENCH_RIMEBLIGHT)
         && !victim.is_peripheral()
-        && !never_harm_monster(&you, victim)
+        && could_harm(&you, &victim)
         && you.see_cell_no_trans(victim.pos()))
     {
         apply_rimeblight(victim, power);
@@ -314,7 +295,7 @@ bool apply_rimeblight(monster& victim, int power, bool quiet)
 
     int duration = (random_range(8, 12) + div_rand_round(power, 30))
                     * BASELINE_DELAY;
-    victim.add_ench(mon_enchant(ENCH_RIMEBLIGHT, 0, &you, duration));
+    victim.add_ench(mon_enchant(ENCH_RIMEBLIGHT, &you, duration));
     victim.props[RIMEBLIGHT_POWER_KEY] = power;
     victim.props[RIMEBLIGHT_TICKS_KEY] = random_range(0, 2);
 
@@ -378,7 +359,7 @@ spret cast_sign_of_ruin(actor& caster, coord_def target, int duration, bool chec
         if (!act)
             continue;
 
-        if (!mons_aligned(&caster, act))
+        if (could_harm_enemy(&caster, act, !check_only))
         {
             if (act->is_player() && !you.duration[DUR_SIGN_OF_RUIN]
                 || act->is_monster() && !act->as_monster()->has_ench(ENCH_SIGN_OF_RUIN))
@@ -411,7 +392,7 @@ spret cast_sign_of_ruin(actor& caster, coord_def target, int duration, bool chec
             if (you.can_see(*act))
                 mprf("The sign of ruin forms upon %s!", act->name(DESC_THE).c_str());
 
-            act->as_monster()->add_ench(mon_enchant(ENCH_SIGN_OF_RUIN, 1, &caster,
+            act->as_monster()->add_ench(mon_enchant(ENCH_SIGN_OF_RUIN, &caster,
                                                     random_range(duration, duration * 3 / 2)));
         }
     }
@@ -445,7 +426,7 @@ spret cast_percussive_tempering(const actor& caster, monster& target, int power,
     shockwave.explode(true, true);
 
     target.heal(roll_dice(3, 10));
-    target.add_ench(mon_enchant(ENCH_TEMPERED, 0, &caster, random_range(70, 100)));
+    target.add_ench(mon_enchant(ENCH_TEMPERED, &caster, random_range(70, 100)));
 
     // Give a small bit of extra duration if we're about to time out, just to
     // avoid the sad feeling of buffing a monster who immediately vanishes.
@@ -540,7 +521,7 @@ void do_vexed_attack(actor& attacker, bool always_hit_ally)
         {
             melee_attack atk(&attacker, victim);
             // The player is deliberately allowed to attack their allies.
-            atk.never_prompt = true;
+            atk.is_involuntary = true;
             atk.launch_attack_set();
         }
         else
@@ -578,13 +559,16 @@ static bool _gloom_affect_target(actor *victim, const actor *agent, int pow)
     if (victim->res_blind())
         return false;
 
+    if (!could_harm(agent, victim, true))
+        return false;
+
     if (victim->is_monster())
     {
         auto mons = victim->as_monster();
         const int numerator = _gloom_chance_numerator(mons->get_hit_dice());
         if (x_chance_in_y(numerator, _gloom_chance_denom(pow)))
         {
-            mons->add_ench(mon_enchant(ENCH_BLIND, 1, agent,
+            mons->add_ench(mon_enchant(ENCH_BLIND, agent,
                         random_range(4, 8) * BASELINE_DELAY));
             return true;
         }
@@ -618,8 +602,7 @@ spret cast_gloom(const actor *caster, int pow, bool fail, bool tracer)
 
     if (tracer)
     {
-         // XX: LOS_NO_TRANS ?
-        for (radius_iterator ri(caster->pos(), range, C_SQUARE, LOS_SOLID_SEE, true); ri; ++ri)
+        for (radius_iterator ri(caster->pos(), range, C_SQUARE, LOS_NO_TRANS, true); ri; ++ri)
         {
             if (!in_bounds(*ri))
                 continue;

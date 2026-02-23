@@ -154,10 +154,8 @@ static void _level_place_followers(m_transit_list &m)
             // Now that the monster is onlevel, we can safely apply traps to it.
             if (monster* new_mon = monster_by_mid(mon->mons.mid))
             {
-                // old loc isn't really meaningful
-                new_mon->apply_location_effects(new_mon->pos());
-
                 _handle_monster_leashing(*new_mon, using_stairs);
+                new_mon->trigger_movement_effects();
             }
             m.erase(mon);
         }
@@ -210,7 +208,7 @@ static void _place_oka_duel_target(monster* mons)
     }
 
     if (!targ.origin())
-        mons->move_to_pos(targ);
+        mons->move_to(targ);
 }
 
 static monster* _place_lost_monster(follower &f)
@@ -231,16 +229,14 @@ static monster* _place_lost_monster(follower &f)
             _place_oka_duel_target(mons);
 
         // Figure out how many turns we need to update the monster
-        int turns = (you.elapsed_time - f.transit_start_time)/10;
+        int time = (you.elapsed_time - f.transit_start_time);
 
-        //Unflag as summoned or else monster will be ignored in update_monster
-        mons->flags &= ~MF_JUST_SUMMONED;
         // Don't keep chasing forever.
         mons->props.erase(OKAWARU_DUEL_ABANDONED_KEY);
         // The status should already have been removed from the player, but
         // this prevents an erroneous status indicator sticking on the monster
         mons->del_ench(ENCH_BULLSEYE_TARGET);
-        return update_monster(*mons, turns);
+        return update_monster(*mons, time);
     }
     else
         return nullptr;
@@ -271,11 +267,8 @@ static void _level_place_lost_monsters(m_transit_list &m)
 
         if (monster* new_mon =_place_lost_monster(*mon))
         {
-            // Now that the monster is on the level, we can safely apply traps
-            // to it.
-            new_mon->apply_location_effects(new_mon->pos());
-
             _handle_monster_leashing(*new_mon, using_stairs);
+            new_mon->trigger_movement_effects();
 
             m.erase(mon);
         }
@@ -443,10 +436,10 @@ static bool _mons_can_follow_player_from(const monster &mons,
     if (!mons.alive()
         || mons.speed_increment < 50
         || mons.incapacitated()
-        || mons.is_stationary()
+        || mons.cannot_move()
         || mons.is_constricted()
-        || mons.has_ench(ENCH_BOUND)
-        || mons.has_ench(ENCH_VEXED))
+        || mons.has_ench(ENCH_VEXED)
+        || mons.has_ench(ENCH_DAZED))
     {
         return false;
     }
@@ -563,6 +556,9 @@ static bool _transport_follower_at(const coord_def &pos, const coord_def &from)
     {
         env.map_knowledge(pos).clear_monster();
         dprf("%s is transported.", fol->name(DESC_THE, true).c_str());
+
+        // Apply traps, etc.
+        fol->trigger_movement_effects(MV_TRANSLOCATION);
 
         return true;
     }

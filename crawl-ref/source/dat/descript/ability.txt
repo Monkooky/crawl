@@ -111,9 +111,7 @@ Evoke Berserk Rage ability
 %%%%
 Evoke Invisibility ability
 
-Turns the user invisible. Turning invisible in this way causes magical
-contamination. Reaching high levels of contamination will cause you to glow
-brightly, nullifying the invisibility.
+Turns the user invisible for a short period of time.
 %%%%
 End Transformation ability
 
@@ -163,7 +161,8 @@ from your body is so immense that it even fills nearby spaces like a choking
 cloud, assailing enemies and gradually putting them to sleep.
 
 After using this ability, you must gain experience points before you can recover
-enough power to use it again.
+enough power to use it again. (Shapeshifting skill will increase the rate at
+which this skill recharges.)
 %%%%
 Enkindle ability
 
@@ -220,9 +219,12 @@ is increased by Invocations skill.
 %%%%
 Sanctuary ability
 
-Creates a divine refuge for a short duration. While you are inside the
-sanctuary, monsters will not attack you, but the protection will disappear at
-once should you breach the divine peace.
+Transforms the area around the user into a domain of unbreakable law for a short
+duration. So long as anyone stands within this sanctuary, no harm may be done to
+them by others, and they may do no harm to others in turn.
+
+Beings with hostile intent are unable to enter a sanctuary and those already
+nearby when it is created will be forced to flee.
 %%%%
 Cure All Mutations ability
 
@@ -817,11 +819,11 @@ Sacrifices purity of body or mind, causing a single mutation.
 %%%%
 Sacrifice Words ability
 
-Sacrifices the ability to use magical scrolls unless badly injured.
+Sacrifices the ability to use magical scrolls in combat unless badly injured.
 %%%%
 Sacrifice Drink ability
 
-Sacrifices the ability to drink potions unless badly injured.
+Sacrifices the ability to drink potions in combat unless badly injured.
 %%%%
 Sacrifice Essence ability
 
@@ -1087,9 +1089,9 @@ You must spend a short while recovering between each use of this ability.
 Watery Grave ability
 
 Turns all of the water near you into a surging tide that attempts to drown every
-enemy standing in or above it. Those who need air to breathe it will also become
-Waterlogged, preventing them from casting spells affected by Silence for several
-turns.
+enemy standing in or above it. Those who need air to breathe will also become
+Flooded, preventing them from casting spells affected by Silence for several
+turns and dealing minor asphyxiation damage.
 
 After using this ability, you must gain experience points before you can recover
 enough power to use it again.

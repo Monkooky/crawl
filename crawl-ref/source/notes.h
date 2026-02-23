@@ -72,6 +72,7 @@ enum NOTE_TYPES
     NOTE_VEXED,
     NOTE_GET_BANE,              /* needs: bane type, reason (string) */
     NOTE_LOSE_BANE,             /* needs: bane_type */
+    NOTE_TESSERACT_ACTIVATED,
     NOTE_NUM_TYPES
 };
 
@@ -105,6 +106,8 @@ void take_note(const Note& note, bool force = false);
 void save_notes(writer&);
 void load_notes(reader&);
 void make_user_note();
+
+bool is_noteworthy_hp(int hp, int maxhp);
 
 /**
  * Disable notes in a dynamic scope. Restores the original note status when

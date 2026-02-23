@@ -184,6 +184,10 @@ Nuckelavee
 
 Pooka
 
+Quinotaur
+
+Sea Goat
+
 Skiapode
 
 Unicorn
@@ -614,6 +618,9 @@ the Onion
 
 the Pink Corner
 
+# Schlock Mercenary, March 5, 2010
+the Plethaurus
+
 the Road Less Travelled
 
 the True Pharaoh
@@ -680,6 +687,8 @@ the Gusle
 
 the Harp
 
+the Kazoo
+
 the Kettle-Drum
 
 the Lute
@@ -739,7 +748,7 @@ Chill Winds
 
 Cloud Cover
 
-Dust Devil
+Dust Devils
 
 Howling Wind
 

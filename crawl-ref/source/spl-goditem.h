@@ -49,7 +49,7 @@ const enchant_type dispellable_enchantments[] =
     ENCH_FROZEN,
     ENCH_SAP_MAGIC,
     ENCH_CORROSION,
-    ENCH_REPEL_MISSILES,
+    ENCH_DEFLECT_MISSILES,
     ENCH_RESISTANCE,
     ENCH_HEXED,
     ENCH_EMPOWERED_SPELLS,
@@ -103,7 +103,7 @@ void holy_word_monsters(coord_def where, int pow, holy_word_source_type source,
 void holy_word_player(holy_word_source_type source);
 
 void torment(actor *attacker, torment_source_type taux, const coord_def& where);
-int torment_cell(coord_def where, actor *attacker, torment_source_type taux);
+int torment_actor(actor* victim, actor *attacker, torment_source_type taux);
 int torment_player(const actor *attacker, torment_source_type taux);
 
 void setup_cleansing_flame_beam(bolt &beam, int pow,

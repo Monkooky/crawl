@@ -224,7 +224,7 @@ static void _give_job_spells(job_type job)
 static void _give_offhand_weapon()
 {
     const item_def *wpn = you.weapon();
-    if (!wpn || you.shield() || you.hands_reqd(*wpn) != HANDS_ONE)
+    if (!wpn || you.offhand_item() || you.hands_reqd(*wpn) != HANDS_ONE)
         return;
     if (is_range_weapon(*wpn))
     {
@@ -630,6 +630,8 @@ static void _setup_generic(const newgame_def& ng,
     init_training();
     if (you.has_mutation(MUT_INNATE_CASTER))
         cleanup_innate_magic_skills();
+
+    init_four_winds();
 
     // Apply autoinscribe rules to inventory.
     request_autoinscribe();

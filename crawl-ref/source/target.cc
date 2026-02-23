@@ -618,11 +618,8 @@ bool targeter_dig::valid_aim(coord_def a)
         {
             possible_squares_affected = 0;
             for (auto p : path_taken)
-                if (beam.can_affect_wall(p) ||
-                        in_bounds(p) && env.map_knowledge(p).feat() == DNGN_UNSEEN)
-                {
+                if (beam.can_affect_wall(p, true))
                     possible_squares_affected++;
-                }
         }
         aim_test_cache[a] = possible_squares_affected;
     }
@@ -661,11 +658,12 @@ aff_type targeter_dig::is_affected(coord_def loc)
         // uses comparison to DNGN_UNSEEN so that this works sensibly with magic
         // mapping etc. TODO: console tracers use the same symbol/color as
         // mmapped walls.
-        if (in_bounds(pc) && env.map_knowledge(pc).feat() != DNGN_UNSEEN)
+        const dungeon_feature_type feat = env.map_knowledge(pc).feat();
+        if (in_bounds(pc) && feat != DNGN_UNSEEN)
         {
-            if (!cell_is_solid(pc))
+            if (!feat_is_solid(feat))
                 current = AFF_TRACER;
-            else if (!beam.can_affect_wall(pc))
+            else if (!beam.can_affect_wall(pc, true))
             {
                 current = AFF_TRACER; // show tracer at the barrier cell
                 hit_barrier = true;
@@ -805,7 +803,7 @@ bool targeter_unravelling::valid_aim(coord_def a)
     }
 
     if (mons && you.can_see(*mons) && _unravelling_explodes_at(a)
-        && never_harm_monster(&you, mons))
+        && !could_harm(&you, mons))
     {
         return notify_fail("You cannot do harm to " + mons->name(DESC_THE));
     }
@@ -1061,14 +1059,14 @@ targeter_cloud::targeter_cloud(const actor* act, cloud_type ct, int r,
         origin = aim = act->pos();
 }
 
-static bool _cloudable(coord_def loc, cloud_type ctype)
+static bool _cloudable(coord_def loc, cloud_type ctype, const actor *agent)
 {
     const cloud_struct *cloud = cloud_at(loc);
     return in_bounds(loc)
            && !cell_is_solid(loc)
            && (!cloud || cloud_is_stronger(ctype, *cloud))
            && (!is_sanctuary(loc) || is_harmless_cloud(ctype))
-           && cell_see_cell(you.pos(), loc, LOS_NO_TRANS);
+           && (!agent || agent->see_cell_no_trans(loc));
 }
 
 bool targeter_cloud::valid_aim(coord_def a)
@@ -1097,7 +1095,7 @@ bool targeter_cloud::valid_aim(coord_def a)
             return notify_fail("You can't place harmful clouds in a "
                                "sanctuary.");
         }
-        ASSERT(_cloudable(a, ctype));
+        ASSERT(_cloudable(a, ctype, agent));
     }
     return true;
 }
@@ -1121,7 +1119,7 @@ bool targeter_cloud::set_aim(coord_def a)
         for (coord_def c : queue[d1])
         {
             for (adjacent_iterator ai(c); ai; ++ai)
-                if (_cloudable(*ai, ctype) && !seen.count(*ai))
+                if (_cloudable(*ai, ctype, agent) && !seen.count(*ai))
                 {
                     unsigned int d2 = d1 + 1;
                     if (d2 >= queue.size())
@@ -1434,7 +1432,7 @@ aff_type targeter_refrig::is_affected(coord_def loc)
     const actor* act = actor_at(loc);
     if (!act || act == agent || !agent->can_see(*act))
         return AFF_NO;
-    if (never_harm_monster(agent, act->as_monster()))
+    if (!could_harm(agent, act))
         return AFF_NO;
     switch (adjacent_huddlers(loc, true))
     {
@@ -2439,7 +2437,7 @@ aff_type targeter_mortar::is_affected(coord_def loc)
         // mmapped walls.
         if (in_bounds(pc) && env.map_knowledge(pc).feat() != DNGN_UNSEEN)
         {
-            if (cell_is_solid(pc) && !beam.can_affect_wall(pc)
+            if (cell_is_solid(pc) && !beam.can_affect_wall(pc, true)
                 || (monster_at(pc) && you.can_see(*monster_at(pc))
                     && !beam.ignores_monster(monster_at(pc))))
             {
@@ -2614,7 +2612,7 @@ bool targeter_wall_arc::set_aim(coord_def a)
     if (!targeter_smite::set_aim(a) || !valid_aim(a) || a == agent->pos())
         return false;
 
-    spots = get_splinterfrost_block_spots(*agent, a, num_walls);
+    spots = get_wall_ring_spots(agent->pos(), a, num_walls, true);
 
     return true;
 }
@@ -2748,6 +2746,17 @@ bool targeter_teleport_other::valid_aim(coord_def a)
         return false;
 
     return true;
+}
+
+bool targeter_teleport_other::preferred_aim(coord_def a)
+{
+    // Prefer not to target monsters which are already teleporting.
+    const monster_info* mi = env.map_knowledge(a).monsterinfo();
+
+    if (!mi)
+        return false;
+
+    return !mi->is(MB_TELEPORTING);
 }
 
 targeter_malign_gateway::targeter_malign_gateway(actor& caster)

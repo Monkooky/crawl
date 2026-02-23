@@ -29,9 +29,13 @@ enum stab_type
     NUM_STABS
 };
 
-bool fight_melee(actor *attacker, actor *defender, bool *did_hit = nullptr,
-                 bool simu = false);
-void do_player_post_attack(actor *defender, bool was_firewood, bool simu = false);
+bool mons_fight(monster* attacker, actor* defender,
+                bool* did_hit = nullptr, bool simu = false);
+bool player_fight(monster* defender, bool is_rampage = false,
+                  bool* did_hit = nullptr, bool simu = false);
+
+void player_attempted_attack(bool trigger_effects, bool maintain_statuses = true,
+                             actor* primary_target = nullptr);
 
 beam_type get_beam_resist_type(beam_type flavour);
 int resist_adjust_damage(const actor *defender, beam_type flavour,
@@ -41,13 +45,13 @@ int apply_chunked_AC(int dam, int ac);
 
 int melee_confuse_chance(int HD);
 
-bool wielded_weapon_check(const item_def *weapon, string attack_verb="");
+bool wielded_weapon_check(string attack_verb="");
 
 stab_type find_player_stab_type(const monster &victim);
 
 int stab_bonus_denom(stab_type stab);
 
-bool dont_harm(const actor &attacker, const actor &defender);
+bool should_cleave_into(const actor &attacker, const actor &defender);
 bool _monster_has_reachcleave(const actor &attacker);
 bool force_player_cleave(coord_def target);
 bool attack_cleaves(const actor &attacker, const item_def *weapon = nullptr);
@@ -57,7 +61,8 @@ bool weapon_multihits(const item_def *item);
 void get_cleave_targets(const actor &attacker, const coord_def& def,
                         list<actor*> &targets, int which_attack = -1,
                         bool force_cleaving = false,
-                        const item_def *weapon = nullptr);
+                        const item_def *weapon = nullptr,
+                        int reach_bonus = 0);
 
 class attack;
 int to_hit_pct(const monster_info& mi, attack &atk,
@@ -103,7 +108,8 @@ bool stop_attack_prompt(targeter &hitfunc, const char* verb,
                         function<bool(const actor *victim)> affects = nullptr,
                         bool *prompted = nullptr,
                         const monster *mons = nullptr,
-                        bool check_only = false);
+                        bool check_only = false,
+                        bool include_player = false);
 
 string stop_summoning_reason(resists_t resists, monclass_flags_t flags);
 bool stop_summoning_prompt(resists_t resists = MR_NO_FLAGS,
@@ -123,8 +129,8 @@ int archer_bonus_damage(int hd);
 
 int aux_to_hit();
 
-bool weapon_uses_strength(skill_type wpn_skill, bool using_weapon);
-int stat_modify_damage(int base_dam, skill_type wpn_skill, bool using_weapon);
+bool weapon_uses_strength(skill_type wpn_skill);
+int stat_modify_damage(int base_dam, skill_type wpn_skill);
 int apply_weapon_skill(int base_dam, skill_type wpn_skill, bool random);
 int apply_fighting_skill(int base_dam, bool aux, bool random);
 int throwing_base_damage_bonus(const item_def &projectile, bool random);

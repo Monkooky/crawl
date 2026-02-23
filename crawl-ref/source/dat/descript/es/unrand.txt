@@ -5,7 +5,7 @@ Un dije de acero azúl con quemaduras borrosas. Su creadora, una mujer muy sensa
 lo diseñó para proteger contra puñaladas, puñetazos y mordeduras. Es peor que
 inútil contra fuego y escaracha, ¿pero con cuánta frequencia es eso relevante?
 %%%%
-amulet of the Four Winds
+amulet of Tranquility
 
 Un dije del jade más fino. Da el que lo lleva fuerza de voluntad y fortaleza mental
 sin igual.
@@ -56,8 +56,4 @@ Sulking Sword
 Screaming Sword
 
 <Singing Sword>
-%%%%
-Sword of Power
-
-Una espada potente que da fuerza a los poderosos y debilidad a los tímidos.
 %%%%

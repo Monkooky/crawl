@@ -107,6 +107,8 @@ enum duration_flags : uint32_t
     // Whether it is a time-based cooldown for an effect.
     D_COOLDOWN    = 1<< 3,
 
+    // Whether it won't lose duration while the player continues to attack.
+    D_ATTACK_EXTENDED = 1<< 4,
 };
 
 /// A description of the behaviour when a duration begins 'expiring'.
@@ -662,6 +664,11 @@ static const duration_def duration_data[] =
       "on gavotte cooldown", "gavotte cooldown",
       "You are unable to cast Gavotte.", D_NO_FLAGS | D_COOLDOWN,
       {{ "Gravity stabilises in your vicinity."}}},
+    { DUR_HELLFIRE_MORTAR_COOLDOWN,
+      YELLOW, "-Hellfire",
+      "on hellfire mortar cooldown", "hellfire mortar cooldown",
+      "You are unable to cast Hellfire Mortar.", D_NO_FLAGS | D_COOLDOWN,
+      {{ "You feel ready to split the earth once more."}}},
     { DUR_ANIMATE_DEAD,
       MAGENTA, "Reap",
       "animating dead", "animating dead",
@@ -694,6 +701,10 @@ static const duration_def duration_data[] =
         YELLOW, "-Lithotox",
         "on lithotoxin cooldown", "lithotoxin cooldown",
         "Your lithotoxin has recently activated.", D_NO_FLAGS},
+    { DUR_EELJOLT_COOLDOWN,
+        YELLOW, "-Jolt",
+        "on eeljolt cooldown", "eeljolt cooldown",
+        "Your hands have recently discharged their full voltage.", D_NO_FLAGS},
     { DUR_JINXBITE, LIGHTBLUE, "Jinx",
       "jinxed", "jinxbite",
       "You are surrounded by jinxing sprites.", D_DISPELLABLE | D_EXPIRES,
@@ -725,7 +736,7 @@ static const duration_def duration_data[] =
     { DUR_EXECUTION,
       LIGHTBLUE, "Execution",
       "surrounded by blades", "execution",
-      "You are surrounded by a whirlwind of blades.", D_EXPIRES,
+      "You are surrounded by a whirlwind of blades.", D_EXPIRES | D_ATTACK_EXTENDED,
       {{ "You feel a little less murderous for the moment." }}},
     { DUR_GROWING_DESTRUCTION,
       LIGHTBLUE, "Destr",
@@ -745,7 +756,7 @@ static const duration_def duration_data[] =
       {{ "Your flames start to waver.", end_enkindled_status }}},
     { DUR_DETONATION_CATALYST, BLUE, "Catalyst",
       "catalyst", "catalyst",
-      "Your strikes ignite an explosive catalyst.", D_EXPIRES},
+      "Your strikes ignite an explosive catalyst.", D_EXPIRES | D_ATTACK_EXTENDED},
     { DUR_SHROUD_TIMEOUT,
       DARKGREY, "Shroud",
       "shroud timeout", "shroud timeout",
@@ -754,7 +765,7 @@ static const duration_def duration_data[] =
     { DUR_WEREFURY,
       BLUE, "Slay",
       "full of bloodlust", "bloodlust",
-      "Your melee attacks are strengthened by primal bloodlust.", D_EXPIRES,
+      "Your melee attacks are strengthened by primal bloodlust.", D_EXPIRES | D_ATTACK_EXTENDED,
       {{ "Your bloodlust subsides." },
        { "You feel your bloodlust ebbing." }}, 6},
     { DUR_PARRYING, 0, "",
@@ -763,6 +774,21 @@ static const duration_def duration_data[] =
       {{ "", []() {
           you.redraw_armour_class = true;
       }}}},
+    { DUR_DEVIOUS,
+      BLUE, "Devious",
+      "devious", "devious",
+      "You feel very devious.", D_DISPELLABLE | D_EXPIRES | D_ATTACK_EXTENDED,
+      {{ "You feel less devious.", [](){
+          you.redraw_evasion = true;
+      }}}},
+    { DUR_ENGORGED,
+      LIGHTBLUE, "Engorged",
+      "engorged", "engorged",
+      "Your maw is digesting a delicious meal.", D_NO_FLAGS,
+      {{ "You finish digesting your meal." }}},
+    { DUR_STAMPEDE, WHITE, "Stampede", "", "", "", D_NO_FLAGS, {{ "You stop stampeding."}}},
+    { DUR_SALVO, LIGHTBLUE, "Salvo", "", "", "", D_NO_FLAGS},
+    { DUR_TAILWIND, LIGHTBLUE, "Tailwind", "ready to rush forward", "tailwind", "", D_NO_FLAGS, {{"Your tailwind grows less brisk."}}},
     { DUR_GASTRONOMIC, MAGENTA, "Gut", "transposing a stomach", "gastronomic expanse",
       "You are transposing a stomach with part of the dungeon.", D_DISPELLABLE,},
 
@@ -792,7 +818,8 @@ static const duration_def duration_data[] =
     { DUR_STUN_IMMUNITY, 0, "", "", "immune to disabling effects", "", D_NO_FLAGS},
     { DUR_VEHUMET_GIFT, 0, "", "", "vehumet gift", "", D_NO_FLAGS, {{""}}},
     { DUR_SICKENING, 0, "", "", "sickening", "", D_NEGATIVE, {{""}}},
-    { DUR_WATER_HOLD, 0, "", "", "drowning", "", D_NEGATIVE},
+    { DUR_FLOODED, RED, "Flooded", "", "flooded", "", D_NEGATIVE},
+    { DUR_FLOODED_IMMUNITY, 0, "", "", "flood immunity", "", D_NO_FLAGS, {{""}} },
     // Regeneration information handled separately.
     { DUR_TROGS_HAND, 0, "", "strong-willed", "trogs hand",
       "Your willpower is greatly increased.", D_EXPIRES,
@@ -801,10 +828,6 @@ static const duration_def duration_data[] =
     { DUR_GOZAG_GOLD_AURA, 0, "", "gold aura", "", "", D_NO_FLAGS,
         {{ "", []() { you.props[GOZAG_GOLD_AURA_KEY] = 0; you.redraw_title = true;}}}},
     { DUR_ANCESTOR_DELAY, 0, "", "", "ancestor delay", "", D_NO_FLAGS, {{""}}},
-    { DUR_GRASPING_ROOTS, 0, "", "grasped by roots", "grasping roots",
-      "You are constricted by grasping roots.", D_NO_FLAGS},
-    { DUR_VILE_CLUTCH, 0, "", "grasped by zombie hands", "vile clutch",
-      "You are constricted by zombie hands.", D_NO_FLAGS},
     { DUR_NOXIOUS_BOG,
       MAGENTA, "Bog",
       "spewing sludge", "noxious bog",
@@ -828,7 +851,6 @@ static const duration_def duration_data[] =
       }}}},
     { DUR_REVELATION, 0, "", "", "revelation", "", D_NO_FLAGS, {{""}}},
     { DUR_JINXBITE_LOST_INTEREST, 0, "", "", "", "", D_EXPIRES, {{"", _maybe_expire_jinxbite}}},
-    { DUR_RAMPAGE_HEAL, 0, "", "", "rampage heal", "", D_NO_FLAGS},
     { DUR_TEMP_CLOUD_IMMUNITY, 0, "", "", "temp cloud immunity", "", D_EXPIRES},
     { DUR_ALLY_RESET_TIMER, 0, "", "", "ally reset timer", "", D_NO_FLAGS},
     { DUR_BEOGH_DIVINE_CHALLENGE, WHITE, "Challenge", "", "apostle challenge",
@@ -847,6 +869,13 @@ static const duration_def duration_data[] =
     { DUR_RIME_YAK_AURA, 0, "", "", "cold aura", "", D_NO_FLAGS, {{""}}},
     { DUR_AUTODODGE, 0, "", "", "autododge", "", D_NO_FLAGS},
     { DUR_DAZED, 0, "", "", "dazed", "", D_NEGATIVE},
+    { DUR_CONSTRICTED, 0, "", "", "constricted", "", D_NO_FLAGS},
+    { DUR_SPITEFUL_BLOOD_COOLDOWN, 0, "", "", "spiteful_blood", "", D_NO_FLAGS},
+    { DUR_SLIMIFYING, 0, "Slimifying", "", "slimifying", "", D_DISPELLABLE | D_NEGATIVE,
+       {{"Your slimification abates."}}},
+    { DUR_OOZE_REGEN, LIGHTBLUE, "OozeRegen", "ooze regen", "ooze regen", "coated in regenerative ooze", D_NO_FLAGS,
+       {{"The regenerative ooze finishes dripping off of you."}}},
+    { DUR_INDOMITABLE, LIGHTBLUE, "Indom", "", "", "", D_NO_FLAGS},
 
 #if TAG_MAJOR_VERSION == 34
     // And removed ones
@@ -903,5 +932,6 @@ static const duration_def duration_data[] =
     { DUR_BRAINLESS, 0, "", "", "old brainless", "", D_NO_FLAGS },
     { DUR_CLUMSY, 0, "", "", "old clumsy", "", D_NO_FLAGS },
     { DUR_SLEEP_IMMUNITY, 0, "", "", "old sleep immunity", "", D_NO_FLAGS, {{""}}},
+    { DUR_VILE_CLUTCH_OLD, 0, "", "", "old vile clutch", "", D_NO_FLAGS, {{""}}},
 #endif
 };

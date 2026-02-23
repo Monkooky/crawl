@@ -19,6 +19,7 @@
 #include "areas.h"
 #include "artefact.h"
 #include "attitude-change.h"
+#include "branch.h"
 #include "cloud.h"
 #include "colour.h"
 #include "command.h"
@@ -359,7 +360,7 @@ static cglyph_t _get_ray_glyph(const coord_def& pos, int colour, int glych,
         colour = mcol;
     }
     return {static_cast<char32_t>(glych),
-            static_cast<unsigned short>(real_colour(colour))};
+            static_cast<unsigned short>(real_colour(colour, pos))};
 }
 
 // Unseen monsters in shallow water show a "strange disturbance".
@@ -1192,7 +1193,7 @@ void direction_chooser::calculate_target_info()
                 preferred_targs.push_back(mi->pos());
             }
         }
-        if (mi->friendly() && !never_harm_monster(&you, **mi)
+        if (mi->friendly() && could_harm(&you, *mi)
             && (!hitfunc || hitfunc->affects_monster(monster_info(*mi))))
         {
             valid_friends.push_back(*mi);
@@ -2155,7 +2156,7 @@ void direction_chooser::handle_wizard_command(command_type key_command,
         break;
 
     case CMD_TARGET_WIZARD_BANISH_MONSTER:
-        m->banish(&you, "", 0, true);
+        m->banish(&you, "", true);
         break;
 
     case CMD_TARGET_WIZARD_KILL_MONSTER:
@@ -3074,32 +3075,51 @@ void _walk_on_decor(dungeon_feature_type new_grid)
         decorLine = replace_all(decorLine, "@your_weapon@", weap);
         decorLine = replace_all(decorLine, "@your_hands@", "your " + you.hand_name(true));
 
+        // For name-related bits in graffiti.
+        decorLine = do_mon_name_replacements(decorLine);
+
         if (!(decorLine == "" || decorLine == "__NONE"))
             mprf(MSGCH_DECOR_FLAVOUR, "%s", decorLine.c_str());
     }
 }
 
-static string _base_feature_desc(dungeon_feature_type grid, trap_type trap)
+static string _base_feature_desc(dungeon_feature_type grid, trap_type trap,
+                                 level_id place = level_id::current())
 {
     if (feat_is_trap(grid) && trap != NUM_TRAPS)
         return full_trap_name(trap);
 
-    if (grid == DNGN_ROCK_WALL && player_in_branch(BRANCH_PANDEMONIUM))
+    if (grid == DNGN_ROCK_WALL && place.branch == BRANCH_PANDEMONIUM)
         return "wall of the weird stuff which makes up Pandemonium";
+    else if (feat_is_stone_stair_down(grid) && place.branch == BRANCH_VAULTS
+             && place.depth == branches[BRANCH_VAULTS].numlevels - 1)
+    {
+        return "metal staircase leading down";
+    }
+    else if (feat_is_stone_stair_down(grid) && place.branch == BRANCH_SLIME
+             && !you.royal_jelly_dead)
+    {
+        return "slimy stone staircase leading down";
+    }
+    else if (feat_is_stone_stair_up(grid) && place.branch == BRANCH_SLIME
+             && !you.royal_jelly_dead)
+    {
+        return "slimy stone staircase leading up";
+    }
     else if (grid == DNGN_ZOT_STATUE && you.zot_orb_monster_known)
         return make_stringf("statue of %s", mons_type_name(you.zot_orb_monster, DESC_A).c_str());
     else if (!is_valid_feature_type(grid))
         return "";
     else
         return get_feature_def(grid).name;
-
 }
 
 string feature_description(dungeon_feature_type grid, trap_type trap,
                            const string & cover_desc,
-                           description_level_type dtype)
+                           description_level_type dtype,
+                           level_id place)
 {
-    string desc = _base_feature_desc(grid, trap);
+    string desc = _base_feature_desc(grid, trap, place);
     desc += cover_desc;
 
     if (grid == DNGN_FLOOR && dtype == DESC_A)
@@ -3153,8 +3173,11 @@ string feature_description_at(const coord_def& where, bool covering,
         if (is_icecovered(where))
             covering_description = ", covered with ice";
 
-        if (is_temp_terrain(where) && grid != DNGN_BINDING_SIGIL)
+        if (is_temp_terrain(where) && grid != DNGN_BINDING_SIGIL
+                                   && grid != DNGN_TRAP_DISPERSAL_INACTIVE)
+        {
             covering_description = ", temporary";
+        }
 
         if (is_bloodcovered(where))
             covering_description += ", spattered with blood";
@@ -3266,16 +3289,16 @@ string feature_description_at(const coord_def& where, bool covering,
     }
 }
 
-static string _describe_monster_weapon(const monster_info& mi, bool ident)
+static string _describe_monster_weapon(const monster_info& mi)
 {
     string desc = "";
     string name1, name2;
     const item_def *weap = mi.inv[MSLOT_WEAPON].get();
     const item_def *alt  = mi.inv[MSLOT_ALT_WEAPON].get();
 
-    if (weap && (!ident || weap->is_identified()))
+    if (weap)
         name1 = weap->name(DESC_A, false, false, true, false);
-    if (alt && (!ident || alt->is_identified()) && mi.wields_two_weapons())
+    if (alt && mi.wields_two_weapons())
         name2 = alt->name(DESC_A, false, false, true, false);
 
     if (name1.empty() && !name2.empty())
@@ -3414,7 +3437,7 @@ static vector<string> _get_monster_desc_vector(const monster_info& mi)
 }
 
 // This method is called in two cases:
-// a) Monsters coming into view: "An ogre comes into view. It is wielding ..."
+// a) Monsters coming into view: "You encounter an ogre. It is wielding ..."
 // b) Monster description via 'x': "An ogre, wielding a club, and wearing ..."
 string get_monster_equipment_desc(const monster_info& mi,
                                   mons_equip_desc_level_type level,
@@ -3463,12 +3486,13 @@ string get_monster_equipment_desc(const monster_info& mi,
         }
     }
 
-    string weap = _describe_monster_weapon(mi, level == DESC_IDENTIFIED);
+    string weap = _describe_monster_weapon(mi);
 
     // Print the rest of the equipment only for full descriptions.
-    if (level == DESC_WEAPON || level == DESC_WEAPON_WARNING)
+    if (level == DESC_WEAPON)
         return desc + weap;
 
+    item_def* mon_wpn = mi.inv[MSLOT_WEAPON].get();
     item_def* mon_arm = mi.inv[MSLOT_ARMOUR].get();
     item_def* mon_shd = mi.inv[MSLOT_SHIELD].get();
     item_def* mon_qvr = mi.inv[MSLOT_MISSILE].get();
@@ -3477,8 +3501,8 @@ string get_monster_equipment_desc(const monster_info& mi,
     item_def* mon_rng = mi.inv[MSLOT_JEWELLERY].get();
 
 #define uninteresting(x) (x && !item_is_worth_listing(*x))
-    // For "comes into view" msgs, only list interesting items
-    if (level == DESC_IDENTIFIED)
+    // For encounter messages, only list interesting items
+    if (level == DESC_NOTEWORTHY || level == DESC_NOTEWORTHY_AND_WEAPON)
     {
         if (uninteresting(mon_arm))
             mon_arm = nullptr;
@@ -3488,10 +3512,20 @@ string get_monster_equipment_desc(const monster_info& mi,
             mon_qvr = nullptr;
         if (uninteresting(mon_rng))
             mon_rng = nullptr;
-        if (uninteresting(mon_alt) && mon_alt->base_type != OBJ_WANDS)
-            mon_alt = nullptr;
     }
 #undef uninteresting
+
+    vector<string> item_descriptions;
+
+    // Dancing weapons have all their weapon information in their full_name, so
+    // we don't need to add another weapon description here (see Mantis 11887).
+    if (!weap.empty() && !mons_class_is_animated_weapon(mi.type)
+        && (level >= DESC_NOTEWORTHY_AND_WEAPON
+            || item_is_worth_listing(*mon_wpn)
+            || (mi.wields_two_weapons() && mon_alt && item_is_worth_listing(*mon_alt))))
+    {
+        item_descriptions.push_back(weap.substr(1)); // strip leading space
+    }
 
     // _describe_monster_weapon already took care of this
     if (mi.wields_two_weapons())
@@ -3499,13 +3533,6 @@ string get_monster_equipment_desc(const monster_info& mi,
 
     const bool mon_has_wand = mon_wnd;
     const bool mon_carry = mon_alt || mon_has_wand;
-
-    vector<string> item_descriptions;
-
-    // Dancing weapons have all their weapon information in their full_name, so
-    // we don't need to add another weapon description here (see Mantis 11887).
-    if (!weap.empty() && !mons_class_is_animated_weapon(mi.type))
-        item_descriptions.push_back(weap.substr(1)); // strip leading space
 
     // as with dancing weapons, don't claim armour echoes 'wear' their armour
     if (mon_arm && mi.type != MONS_ARMOUR_ECHO && mi.type != MONS_HAUNTED_ARMOUR)
@@ -3529,7 +3556,7 @@ string get_monster_equipment_desc(const monster_info& mi,
         item_descriptions.push_back(rng_desc);
     }
 
-    if (mon_qvr && !is_launcher_ammo(*mon_qvr))
+    if (mon_qvr)
     {
         const bool net = mon_qvr->sub_type == MI_THROWING_NET;
         const string qvr_desc = net ? mon_qvr->name(DESC_A)

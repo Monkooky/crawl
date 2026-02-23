@@ -107,6 +107,7 @@ static int _place_uniques();
 static void _place_traps();
 static void _prepare_water();
 static void _check_doors();
+static void _adjust_slime_stairs();
 
 static void _add_plant_clumps(int rarity, int clump_sparseness,
                               int clump_radius);
@@ -370,8 +371,8 @@ bool builder(bool enable_random_maps)
                 // possibly the flavor tile for the entrance.
                 for (rectangle_iterator ri(0); ri; ++ri)
                 {
-                    dungeon_feature_type feat = env.grid(*ri);
-                    if (feat_is_portal_entrance(feat) && !feature_mimic_at(*ri))
+                    dungeon_feature_type feat = feat_at_no_mimic(*ri);
+                    if (feat_is_portal_entrance(feat))
                     {
                         level_id whither = stair_destination(feat, "", false);
                         dprf("    Removing portal entrance to %s at %d,%d",
@@ -778,7 +779,7 @@ void dgn_reset_player_data()
 
     // item stuff that can interact with the builder
     you.runes.reset();
-    you.obtainable_runes = 15;
+    you.obtainable_runes = MAX_RUNES;
     initialise_item_sets(true);
     you.unique_items.init(UNIQ_NOT_EXISTS);
     you.octopus_king_rings = 0x00;
@@ -898,15 +899,16 @@ static void _dgn_unregister_vault(const map_def &map)
 
 bool dgn_square_travel_ok(const coord_def &c)
 {
-    const dungeon_feature_type feat = env.grid(c);
+    // the mimic check here relies on full placement operating, e.g. not &L
+    const dungeon_feature_type feat = feat_at_no_mimic(c);
     if (feat_is_trap(feat))
     {
         const trap_def * const trap = trap_at(c);
         return !(trap && (trap->type == TRAP_TELEPORT_PERMANENT
                           || trap->type == TRAP_DISPERSAL));
     }
-    else // the mimic check here relies on full placement operating, e.g. not &L
-        return feat_is_traversable(feat) || feature_mimic_at(c);
+    else
+        return feat_is_traversable(feat);
 }
 
 static bool _dgn_square_is_tele_connected(const coord_def &c)
@@ -1039,16 +1041,18 @@ static bool _is_upwards_exit_stair(const coord_def &c)
     // Is this a valid upwards or exit stair out of a branch? In general,
     // ensure that each region has a stone stair up.
 
-    if (feature_mimic_at(c) || env.grid(c) == DNGN_EXIT_HELL)
+    const dungeon_feature_type feat = feat_at_no_mimic(c);
+
+    if (feat == DNGN_EXIT_HELL)
         return false;
 
-    if (feat_is_stone_stair_up(env.grid(c))
-        || feat_is_branch_exit(env.grid(c)))
+    if (feat_is_stone_stair_up(feat)
+        || feat_is_branch_exit(feat))
     {
         return true;
     }
 
-    switch (env.grid(c))
+    switch (feat)
     {
     case DNGN_EXIT_PANDEMONIUM:
     case DNGN_TRANSIT_PANDEMONIUM:
@@ -1061,20 +1065,22 @@ static bool _is_upwards_exit_stair(const coord_def &c)
 
 static bool _is_exit_stair(const coord_def &c)
 {
-    if (feature_mimic_at(c) || env.grid(c) == DNGN_EXIT_HELL)
+    const dungeon_feature_type feat = feat_at_no_mimic(c);
+
+    if (feat == DNGN_EXIT_HELL)
         return false;
 
     // Branch entries, portals, and abyss entries are not considered exit
     // stairs here, as they do not provide an exit (in a transitive sense) from
     // the current level.
-    if (feat_is_stone_stair(env.grid(c))
-        || feat_is_escape_hatch(env.grid(c))
-        || feat_is_branch_exit(env.grid(c)))
+    if (feat_is_stone_stair(feat)
+        || feat_is_escape_hatch(feat)
+        || feat_is_branch_exit(feat))
     {
         return true;
     }
 
-    switch (env.grid(c))
+    switch (feat)
     {
     case DNGN_EXIT_PANDEMONIUM:
     case DNGN_TRANSIT_PANDEMONIUM:
@@ -1278,20 +1284,6 @@ static void _dgn_place_feature_at_random_floor_square(dungeon_feature_type feat,
                                                       unsigned mask = MMT_VAULT)
 {
     coord_def place = _dgn_random_point_in_bounds(DNGN_FLOOR, mask, DNGN_FLOOR);
-    if (player_in_branch(BRANCH_SLIME))
-    {
-        int tries = 100;
-        while (!place.origin()  // stop if we fail to find floor.
-               && (dgn_has_adjacent_feat(place, DNGN_ROCK_WALL)
-                   || dgn_has_adjacent_feat(place, DNGN_SLIMY_WALL))
-               && tries-- > 0)
-        {
-            place = _dgn_random_point_in_bounds(DNGN_FLOOR, mask, DNGN_FLOOR);
-        }
-
-        if (tries < 0)  // tries == 0 means we succeeded on the last attempt
-            place.reset();
-    }
     if (place.origin())
         throw dgn_veto_exception("Cannot place feature at random floor square.");
     else
@@ -1872,10 +1864,7 @@ static list<coord_def> _find_stone_stairs(bool up_stairs)
     for (rectangle_iterator ri(1); ri; ++ri)
     {
         const coord_def& c = *ri;
-        if (feature_mimic_at(c))
-            continue;
-
-        const dungeon_feature_type feat = env.grid(c);
+        const dungeon_feature_type feat = feat_at_no_mimic(c);
         if (feat_is_stone_stair(feat)
             && up_stairs == feat_is_stone_stair_up(feat))
         {
@@ -2766,6 +2755,9 @@ static void _build_dungeon_level()
         // Ruination and plant clumps.
         _post_vault_build();
 
+        if (player_in_branch(BRANCH_SLIME))
+            _adjust_slime_stairs();
+
         // XXX: Moved this here from builder_monsters so that
         //      connectivity can be ensured
         _place_uniques();
@@ -3630,6 +3622,111 @@ static void _place_traps()
     }
 }
 
+// Unique stair-placement function for Slime.
+// Ensures that all up stairs are non-adjacent to walls, and that all down stairs
+// are at least 12 tiles away from any up stair.
+static void _adjust_slime_stairs()
+{
+    const int stair_start = DNGN_STONE_STAIRS_DOWN_I;
+    const int stair_count = DNGN_STONE_STAIRS_UP_III - stair_start + 1;
+
+    FixedVector < coord_def, stair_count > existing;
+    int down_stairs_needed = at_branch_bottom() ? 0 : 3;
+
+    // Find all existing stairs, removing those which are not in vaults and
+    // noting those which are, so that we know which we need to place ourselves.
+    for (rectangle_iterator ri(0); ri; ++ri)
+    {
+        if (feat_is_stone_stair(env.grid(*ri)))
+        {
+            if (map_masked(*ri, MMT_VAULT))
+            {
+                existing[env.grid(*ri) - stair_start] = *ri;
+                if (feat_is_stone_stair_down(env.grid(*ri)))
+                    --down_stairs_needed;
+            }
+            else
+                _set_grd(*ri, DNGN_FLOOR);
+        }
+    }
+
+    // Up stairs should be placed first.
+    const int num_upstairs = you.depth == 1 ? 1 : 3;
+    for (int i = DNGN_STONE_STAIRS_UP_I; i < DNGN_STONE_STAIRS_UP_I + num_upstairs; ++i)
+    {
+        // Stair already exists on the floor, so no need to place.
+        if (!existing[i - stair_start].origin())
+            continue;
+
+        int tries = 100;
+        coord_def place = _dgn_random_point_in_bounds(DNGN_FLOOR, MMT_VAULT, DNGN_FLOOR);
+        while (!place.origin()  // stop if we fail to find floor.
+                && (dgn_has_adjacent_feat(place, DNGN_ROCK_WALL)
+                    || dgn_has_adjacent_feat(place, DNGN_SLIMY_WALL))
+               && tries-- > 0)
+        {
+            place = _dgn_random_point_in_bounds(DNGN_FLOOR, MMT_VAULT, DNGN_FLOOR);
+        }
+
+        // If we can't place a stair by now, give up.
+        if (place.origin())
+            return;
+        else
+        {
+            _set_grd(place, static_cast<dungeon_feature_type>(i));
+            existing[i - stair_start] = place;
+        }
+    }
+
+    if (down_stairs_needed == 0)
+        return;
+
+    // Now place down stairs. We're a little more exhaustive about determining possible
+    // positions, since some configurations of up stairs may exclude much of the floor.
+    vector<coord_def> valid;
+    for (rectangle_iterator ri(0); ri; ++ri)
+    {
+        // Only floor outside of vaults is valid.
+        if (env.grid(*ri) != DNGN_FLOOR || map_masked(*ri, MMT_VAULT))
+            continue;
+
+        if (!dgn_has_adjacent_feat(*ri, DNGN_FLOOR))
+            continue;
+
+        // Check that we're a sufficient distance from all up stairs.
+        bool too_close = false;
+        for (int i = DNGN_STONE_STAIRS_UP_I - stair_start; i < DNGN_STONE_STAIRS_UP_I + num_upstairs - stair_start; ++i)
+        {
+            if (grid_distance(*ri, existing[i]) < 12)
+            {
+                too_close = true;
+                break;
+            }
+        }
+
+        if (!too_close)
+            valid.push_back(*ri);
+    }
+
+    if ((int)valid.size() < down_stairs_needed)
+        throw dgn_veto_exception("Cannot place sufficient down stairs.");
+
+    for (int i = DNGN_STONE_STAIRS_DOWN_I; i <= DNGN_STONE_STAIRS_DOWN_III; ++i)
+    {
+        // Stair already exists on the floor, so no need to place.
+        if (!existing[i - stair_start].origin())
+            continue;
+
+        // Pick a random valid spot, then mark it unused.
+        int rng = random2(valid.size());
+        while (valid[rng].origin())
+            rng = random2(valid.size());
+
+        _set_grd(valid[rng], static_cast<dungeon_feature_type>(i));
+        valid[rng].reset();
+    }
+}
+
 // Create randomly-placed stone stairs.
 void dgn_place_stone_stairs(bool maybe_place_hatches)
 {
@@ -3646,7 +3743,7 @@ void dgn_place_stone_stairs(bool maybe_place_hatches)
 
     int pair_count = 3;
 
-    if (maybe_place_hatches && coinflip())
+    if (maybe_place_hatches && !player_in_branch(BRANCH_SLIME) && coinflip())
         pair_count++;
 
     for (int i = 0; i < pair_count; ++i)
@@ -3832,12 +3929,14 @@ static void _place_branch_entrances(bool use_vaults)
             continue;
 
         for (branch_iterator it; it; ++it)
-            if (it->entry_stairs == env.grid(*ri)
-                && !feature_mimic_at(*ri))
+        {
+            const dungeon_feature_type feat = feat_at_no_mimic(*ri);
+            if (it->entry_stairs == feat)
             {
                 branch_entrance_placed[it->id] = true;
                 break;
             }
+        }
     }
 
     if (crawl_state.game_is_descent())
@@ -5727,6 +5826,7 @@ void dgn_replace_area(const coord_def& p1, const coord_def& p2,
                 env.map_knowledge(*ri).set_feature(feature, 0,
                                                    get_trap_type(*ri));
 #ifdef USE_TILE
+                // XXX: this will not be the correct tile for the feature...
                 tile_env.bk_bg(*ri) = feature;
 #endif
             }
@@ -6672,27 +6772,6 @@ coord_def dgn_find_feature_marker(dungeon_feature_type feat)
     return coord_def();
 }
 
-// Make hatches and shafts land the player a bit away from the wall.
-// Specifically, the adjacent cell with least slime walls next to it.
-// XXX: This can still give bad situations if the layout is not bubbly,
-//      e.g. when a vault is placed with connecting corridors.
-static void _fixup_slime_hatch_dest(coord_def* pos)
-{
-    int max_walls = 9;
-    for (adjacent_iterator ai(*pos, false); ai; ++ai)
-    {
-        if (!feat_is_traversable(env.grid(*ai)))
-            continue;
-        const int walls = count_adjacent_slime_walls(*ai);
-        if (walls < max_walls)
-        {
-            *pos = *ai;
-            max_walls = walls;
-        }
-    }
-    ASSERT(max_walls < 9);
-}
-
 coord_def dgn_find_nearby_stair(dungeon_feature_type stair_to_find,
                                 coord_def base_pos, bool find_closest,
                                 string hatch_name)
@@ -6707,8 +6786,6 @@ coord_def dgn_find_nearby_stair(dungeon_feature_type stair_to_find,
         || stair_to_find == DNGN_TRAP_SHAFT)
     {
         coord_def pos(_get_feat_dest(base_pos, stair_to_find, hatch_name));
-        if (player_in_branch(BRANCH_SLIME))
-            _fixup_slime_hatch_dest(&pos);
         if (in_bounds(pos))
             return pos;
     }
@@ -6767,8 +6844,10 @@ coord_def dgn_find_nearby_stair(dungeon_feature_type stair_to_find,
             const int dist = (xpos-basex)*(xpos-basex)
                              + (ypos-basey)*(ypos-basey);
 
-            if (orig_terrain(coord_def(xpos, ypos)) == stair_to_find
-                && !feature_mimic_at(coord_def(xpos, ypos)))
+            const coord_def pos(xpos, ypos);
+            const dungeon_feature_type feat = orig_terrain_no_mimic(pos);
+
+            if (feat == stair_to_find)
             {
                 found++;
                 if (find_closest)
@@ -6811,7 +6890,7 @@ coord_def dgn_find_nearby_stair(dungeon_feature_type stair_to_find,
             const int ypos  = (basey + ydiff + GYM) % GYM;
 
             bool good_stair;
-            const int looking_at = orig_terrain(coord_def(xpos, ypos));
+            const int looking_at = orig_terrain_no_mimic(coord_def(xpos, ypos));
 
             if (feat_is_stone_stair_down(stair_to_find)
                 || stair_to_find == DNGN_ESCAPE_HATCH_DOWN
@@ -6829,7 +6908,7 @@ coord_def dgn_find_nearby_stair(dungeon_feature_type stair_to_find,
             const int dist = (xpos-basex)*(xpos-basex)
                              + (ypos-basey)*(ypos-basey);
 
-            if (good_stair && !feature_mimic_at(coord_def(xpos, ypos)))
+            if (good_stair)
             {
                 found++;
                 if (find_closest && dist < best_dist)
@@ -7077,10 +7156,7 @@ static bool _fixup_interlevel_connectivity()
     int max_region = 0;
     for (rectangle_iterator ri(0); ri; ++ri)
     {
-        if (feature_mimic_at(*ri))
-            continue;
-
-        dungeon_feature_type feat = env.grid(*ri);
+        const dungeon_feature_type feat = feat_at_no_mimic(*ri);
         switch (feat)
         {
         case DNGN_STONE_STAIRS_DOWN_I:

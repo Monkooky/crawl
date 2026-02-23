@@ -47,7 +47,7 @@ CHANCE: 20% (D:2)
 CHANCE: 20% (Orc)
 CHANCE: 10% (Snake)
 CHANCE: 8% (Elf)
-CHANCE: 5% (Lair, Slime, Crypt)
+CHANCE: 5% (Lair, Crypt)
 CHANCE: 1% (Zot)
 CHANCE: 0
 : if crawl.one_chance_in(4) then
@@ -407,7 +407,7 @@ COLOUR:   x : blue / red / magenta / brown / lightgreen / lightred / \
 NSUBST:   u = 1=p / 1=r / 1=q / 2=q...
 FTILE:    'upqrzc : floor_nerves
 MARKER:   r = lua:fog_machine { cloud_type="purple smoke", walk_dist=1, \
-            size=1, pow_max=5, delay=10, buildup_amnt=7, buildup_time=7, \
+            size = 1, pow_max=5, delay=10, buildup_amnt=7, buildup_time=7, \
             spread_rate=2, start_clouds=1, colour="purple" }
 TILE:     x : wall_abyss
 MAP
@@ -461,4 +461,21 @@ MAP
 .1_1.
 ..1..
 .....
+ENDMAP
+
+### Miscellaneous minor god altars ###########################################
+
+# places a random non-temple god that is hard to access
+NAME:   hellmonk_sealed_altar
+TAGS:   no_monster_gen no_descent extra
+DEPTH:  D:5-
+KFEAT:  B = altar_jiyva w:5 / altar_lugonu / altar_ignis w:2 / altar_beogh
+MAP
+lllll
+lxxxl
+lxBxl
+lx<xl
+lxmxl
+lllll
+  @
 ENDMAP

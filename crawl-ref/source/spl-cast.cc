@@ -52,6 +52,7 @@
 #include "ouch.h"
 #include "output.h"
 #include "player.h"
+#include "player-notices.h"
 #include "player-stats.h"
 #include "prompt.h"
 #include "religion.h"
@@ -291,7 +292,7 @@ int list_spells(bool toggle_with_I, bool transient, bool viewing,
 
     string more_str = make_stringf("<lightgrey>Select a spell to %s</lightgrey>",
         real_action.c_str());
-    more_str = pad_more_with_esc(more_str + "   [<w>?</w>] help");
+    string help_desc = make_stringf("   [<w>?</w>] help    ");
     string toggle_desc = menu_keyhelp_cmd(CMD_MENU_CYCLE_MODE);
     if (toggle_with_I)
     {
@@ -300,7 +301,7 @@ int list_spells(bool toggle_with_I, bool transient, bool viewing,
         toggle_desc += "/[<w>I</w>]";
     }
     toggle_desc += " toggle spell headers";
-    more_str = pad_more_with(more_str, toggle_desc);
+    more_str = pad_more_with_esc(more_str + help_desc + toggle_desc);
     spell_menu.set_more(formatted_string::parse_string(more_str));
     // TODO: should allow toggling between execute and examine
     spell_menu.menu_action = viewing ? Menu::ACT_EXAMINE : Menu::ACT_EXECUTE;
@@ -592,6 +593,10 @@ int calc_spell_power(spell_type spell)
     if (you.duration[DUR_DIMINISHED_SPELLS])
         power = power / 2;
 
+    // Claustrophobia reduces power by 10% per wall.
+    if (you.has_bane(BANE_CLAUSTROPHOBIA))
+        power = power * (100 - you.props[CLAUSTROPHOBIA_KEY].get_int() * 5) / 100;
+
     return power;
 }
 
@@ -632,6 +637,9 @@ static int _spell_enhancement(spell_type spell)
 
     if (typeflags & spschool::air)
         enhanced += player_spec_air();
+
+    if (you.form == transformation::jelly)
+        enhanced -= 2;
 
     if (you.unrand_equipped(UNRAND_BATTLE))
     {
@@ -710,13 +718,6 @@ bool can_cast_spells(bool quiet)
         return false;
     }
 
-    if (you.duration[DUR_WATER_HOLD] && !you.res_water_drowning())
-    {
-        if (!quiet)
-            mpr("You cannot cast spells while unable to breathe!");
-        return false;
-    }
-
     if (you.duration[DUR_NO_CAST])
     {
         if (!quiet)
@@ -746,11 +747,13 @@ bool can_cast_spells(bool quiet)
         return false;
     }
 
-    if (silenced(you.pos()))
+    if (you.is_silenced())
     {
         if (!quiet)
-            mpr("You cannot cast spells when silenced!");
-        // included in default force_more_message
+        {
+            mprf("You cannot cast spells while %s!", player_silenced_reason());
+            // included in default force_more_message
+        }
         return false;
     }
 
@@ -785,7 +788,7 @@ static void _handle_energy_orb(int cost, spret cast_result)
                 && !mi->wont_attack() && x_chance_in_y(cost, 9))
             {
                 targs.push_back(*mi);
-                mi->add_ench(mon_enchant(ENCH_ANTIMAGIC, 0, &you, random_range(20, 50)));
+                mi->add_ench(mon_enchant(ENCH_ANTIMAGIC, &you, random_range(20, 50)));
             }
         }
 
@@ -836,6 +839,19 @@ static bool _death_ego_charge_hp(spell_type spell)
             && !you.duration[DUR_DEATHS_DOOR];
 }
 
+
+static int _spell_addition_hp_cost(spell_type spell)
+{
+    const int spell_cost = spell_mana(spell);
+    int hp_cost = 0;
+    if (_majin_charge_hp())
+        hp_cost += spell_cost;
+    if (_death_ego_charge_hp(spell))
+        hp_cost += spell_cost;
+    // The cost shouldn't ever kill you
+    hp_cost = min(hp_cost, you.hp - 1);
+    return hp_cost;
+}
 
 /**
  * Cast a spell.
@@ -1029,12 +1045,9 @@ spret cast_a_spell(bool check_range, spell_type spell, dist *_target,
     const int cost = spell_mana(spell);
     pay_mp(cost);
 
-    // Majin Bo HP cost taken at the same time
-    // (but after hp costs from HP casting)
-    const int hp_cost = min(spell_mana(spell), you.hp - 1);
-    if (_majin_charge_hp())
-        pay_hp(hp_cost);
-    if (_death_ego_charge_hp(spell))
+    // Needs to happen after hp costs from HP casting
+    const int hp_cost = _spell_addition_hp_cost(spell);
+    if (hp_cost)
         pay_hp(hp_cost);
 
     const spret cast_result = your_spells(spell, 0, !you.divine_exegesis,
@@ -1067,13 +1080,15 @@ spret cast_a_spell(bool check_range, spell_type spell, dist *_target,
         count_action(CACT_CAST, spell);
     }
 
-    finalize_mp_cost(_majin_charge_hp() ? hp_cost : 0);
+    if (you.duration[DUR_STAMPEDE] && you.has_mutation(MUT_EAST_WIND))
+        you.duration[DUR_STAMPEDE] += you.time_taken;
+
+    finalize_mp_cost(hp_cost > 0);
     // Check if an HP payment brought us low enough
     // to trigger Celebrant or time-warped blood.
     makhleb_celebrant_bloodrite();
     _maybe_blood_hastes_allies();
     you.turn_is_over = true;
-    alert_nearby_monsters();
 
     return cast_result;
 }
@@ -1132,9 +1147,6 @@ static void _spellcasting_side_effects(spell_type spell, god_type god,
         // Make some noise if it's actually the player casting.
         noisy(spell_noise(spell), you.pos());
     }
-
-    alert_nearby_monsters();
-
 }
 
 #ifdef WIZARD
@@ -1311,9 +1323,7 @@ unique_ptr<targeter> find_spell_targeter(spell_type spell, int pow, int range)
     case SPELL_FIRE_STORM:
         return make_unique<targeter_smite>(&you, range, 2, pow > 76 ? 3 : 2);
     case SPELL_FREEZING_CLOUD:
-    case SPELL_POISONOUS_CLOUD:
-    case SPELL_HOLY_BREATH:
-        return make_unique<targeter_cloud>(&you, spell_to_cloud(spell), range);
+        return make_unique<targeter_cloud>(&you, CLOUD_COLD, range);
     case SPELL_THUNDERBOLT:
         return make_unique<targeter_thunderbolt>(&you, range,
                    get_thunderbolt_last_aim(&you));
@@ -1326,8 +1336,6 @@ unique_ptr<targeter> find_spell_targeter(spell_type spell, int pow, int range)
         return make_unique<targeter_smite>(&you, range);
     case SPELL_FULMINANT_PRISM:
         return make_unique<targeter_smite>(&you, range, 0, 2);
-    case SPELL_GLACIATE:
-        return make_unique<targeter_cone>(&you, range);
     case SPELL_GRAVITAS:
         return make_unique<targeter_smite>(&you, range, gravitas_radius(pow),
                                                         gravitas_radius(pow));
@@ -1645,10 +1653,13 @@ static int _to_hit_pct(const monster_info& mi, int acc)
         return 100;
 
     acc += mi.lighting_modifiers();
+    if (mi.is(MB_EXPOSED))
+        acc *= 2;
+
     if (acc <= 1)
         return mi.ev <= 2 ? 100 : 0;
 
-    const int base_ev = mi.ev + (mi.is(MB_REPEL_MSL) ? REPEL_MISSILES_EV_BONUS : 0);
+    const int base_ev = mi.ev + (mi.is(MB_DEFLECT_MSL) ? DEFLECT_MISSILES_EV_BONUS : 0);
 
     int hits = 0;
     int iters = 0;
@@ -2006,8 +2017,10 @@ desc_filter targeter_addl_desc(spell_type spell, int powc, spell_flags flags,
                                                              false)
                                             :
               //XXX: deduplicate this with mass_enchantment?
-              testbits(flags, spflag::area) ? min(200, ( powc * 3 ) / 2)
-                                            : powc;
+              spell == SPELL_CAUSE_FEAR
+              || spell == SPELL_ANGUISH
+              || spell == SPELL_DISCORD ? min(200, ( powc * 3 ) / 2)
+                                                  : powc;
 
         if (spell == SPELL_ENFEEBLE)
             return bind(_desc_enfeeble_chance, placeholders::_1, eff_pow);
@@ -2459,10 +2472,8 @@ static spret _do_cast(spell_type spell, int powc, const dist& spd,
         return cast_iood(&you, powc, &beam, 0, 0, MHITNOT, fail);
 
     // Clouds and explosions.
-    case SPELL_POISONOUS_CLOUD:
-    case SPELL_HOLY_BREATH:
     case SPELL_FREEZING_CLOUD:
-        return cast_big_c(powc, spell, &you, beam, fail);
+        return cast_freezing_cloud(powc, beam.target, fail);
 
     case SPELL_FIRE_STORM:
         return cast_fire_storm(powc, beam, fail);
@@ -2762,9 +2773,6 @@ static spret _do_cast(spell_type spell, int powc, const dist& spd,
 
     case SPELL_SIMULACRUM:
         return cast_simulacrum(spd.target, powc, fail);
-
-    case SPELL_GLACIATE:
-        return cast_glaciate(&you, powc, target, fail);
 
     case SPELL_GRAVE_CLAW:
         return cast_grave_claw(you, spd.target, powc, fail);
@@ -3496,6 +3504,9 @@ void handle_channelled_spell()
         default:
             mprf(MSGCH_WARN, "Attempting to channel buggy spell: %s", spell_title(spell));
     }
+
+    if (you.duration[DUR_STAMPEDE] && you.has_mutation(MUT_EAST_WIND))
+        you.duration[DUR_STAMPEDE] += you.time_taken;
 }
 
 void stop_channelling_spells(bool quiet)

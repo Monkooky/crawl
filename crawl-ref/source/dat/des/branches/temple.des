@@ -15,7 +15,7 @@ function get_altar_count(e, default)
   local params = dgn.map_parameters()
   local count = "";
   if params ~= nil then
-    local tag = unpack(params)
+    local tag = table.unpack(params)
     if tag ~= nil then
       -- temple_altars_ is 14 characters
       count = string.sub(tag, 15)
@@ -1650,7 +1650,6 @@ MARKER: { = lua:fog_machine{cloud_type = "white fluffiness", pow_max = 20, \
 MARKER: B = lua:fog_machine{cloud_type = "white fluffiness", pow_max = 20, \
              delay_min = 10, delay_max = 50, size = 1,    \
              walk_dist = 5, start_clouds = 7}
-
 MAP
 ccccccccccccccccccc
 cccccc.......cccccc
@@ -2359,9 +2358,7 @@ TAGS:   no_pool_fixup
 PLACE:  Temple
 ORIENT: encompass
 KFEAT:  ~ = floor
-MARKER: d = lua:fog_machine { cloud_type = "flame", pow_min = 100, \
-                              pow_max = 100, delay = 1, start_clouds = 1, \
-                              size = 1, spread_rate = 0, excl_rad = -1 }
+: single_cloud(_G, "d", "flame", false)
 COLOUR: c = white
 COLOUR: . = lightgrey
 COLOUR: ~ = green
@@ -4711,7 +4708,7 @@ COLOUR: ' = red
 COLOUR: - = white
 COLOUR: G. = yellow
 : local altar_count = get_altar_count(_G, 19)
-: local half_count = (altar_count - 1) / 2
+: local half_count = math.floor((altar_count - 1) / 2)
 : nsubst ("D = " .. half_count .. ":B / *:'")
 : nsubst ("E = " .. half_count .. ":B / *:-")
 MARKER:  P = lua:transp_loc("pantheon_dark_entry")
@@ -5429,12 +5426,8 @@ SUBST:   ^ = ^F.
 KFEAT:   ^ = web
 KMONS:   P = plant
 KMONS:   F = fungus
-MARKER:  L = lua:fog_machine { cloud_type = "flame", delay = 10, \
-                  pow_min = 100, pow_max = 100, size = 1, walk_dist = 0, \
-                  excl_rad = 0 }
-MARKER:  S = lua:fog_machine { cloud_type = "black smoke", delay = 50, \
-                  pow_min = 1, pow_max = 10, size = 1, walk_dist = 0, \
-                  excl_rad = 0, spread_rate = 0 }
+: single_cloud(_G, "L", "flame", false)
+: single_cloud(_G, "S", "black smoke", true)
 MAP
             ccc
         cccccLccccc

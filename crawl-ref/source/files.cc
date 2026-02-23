@@ -66,6 +66,7 @@
 #include "level-state-type.h"
 #include "libutil.h"
 #include "macro.h"
+#include "map-knowledge.h"
 #include "mapmark.h"
 #include "message.h"
 #include "mon-behv.h"
@@ -1161,7 +1162,7 @@ static bool _shaft_safely()
             continue;
         }
 
-        you.moveto(pos);
+        you.move_to(pos, MV_INTERNAL);
         return true;
     }
 
@@ -1184,8 +1185,8 @@ static void _place_player_on_stair(int stair_taken, const coord_def& dest_pos,
             return;
         // If we can't find a safe place, fall through to default random placement.
     }
-    you.moveto(dgn_find_nearby_stair(stair_type, dest_pos, find_first,
-                                     hatch_name));
+    you.move_to(dgn_find_nearby_stair(stair_type, dest_pos, find_first,
+                                      hatch_name), MV_INTERNAL);
 }
 
 static void _clear_env_map()
@@ -1200,12 +1201,13 @@ static void _grab_follower(monster* fol)
 
     dprf("%s is following to %s.", fol->name(DESC_THE, true).c_str(),
          dest.describe().c_str());
-    bool could_see = you.can_see(*fol);
+    const bool could_see = you.can_see(*fol);
+    const coord_def old_pos = fol->pos();
     fol->set_transit(dest);
     fol->destroy_inventory();
     monster_cleanup(fol);
     if (could_see)
-        view_update_at(fol->pos());
+        view_update_at(old_pos);
 }
 
 // Expire all friendly summons / zombies / etc. when the player is leaving a floor.
@@ -1435,7 +1437,7 @@ static void _place_player_randomly()
     monster* const mons = monster_at(newpos);
     if (mons)
         mons->teleport(true);
-    you.moveto(newpos);
+    you.move_to(newpos, MV_INTERNAL);
 }
 
 /**
@@ -1450,9 +1452,9 @@ static void _place_player(dungeon_feature_type stair_taken,
                           const coord_def &dest_pos, const string &hatch_name)
 {
     if (player_in_branch(BRANCH_ABYSS))
-        you.moveto(ABYSS_CENTRE);
+        you.move_to(ABYSS_CENTRE, MV_INTERNAL);
     else if (!return_pos.origin())
-        you.moveto(return_pos);
+        you.move_to(return_pos, MV_INTERNAL);
     else if (stair_taken == DNGN_ALTAR_IGNIS) // hack: we're rocketeers!
         _place_player_randomly();
     else
@@ -1470,12 +1472,10 @@ static void _place_player(dungeon_feature_type stair_taken,
                 && !(env.pgrid(*di) & FPROP_NO_TELE_INTO))
             {
                 if (you.pos() != *di)
-                    you.moveto(*di);
+                    you.move_to(*di, MV_INTERNAL);
                 break;
             }
     }
-
-
 
     // This should fix the "monster occurring under the player" bug.
     monster *mon = monster_at(you.pos());
@@ -1485,7 +1485,7 @@ static void _place_player(dungeon_feature_type stair_taken,
         {
             if (!monster_at(*di) && mon->is_habitable(*di))
             {
-                mon->move_to_pos(*di);
+                mon->move_to(*di, MV_INTERNAL);
                 return;
             }
         }
@@ -1495,6 +1495,8 @@ static void _place_player(dungeon_feature_type stair_taken,
         monster_die(*mon, KILL_RESET_KEEP_ITEMS, NON_MONSTER);
         // XXX: do we need special handling for uniques...?
     }
+
+    you.finalise_movement();
 
     // Dump all arena contents on the player's feet when exiting the arena
     if (stair_taken == DNGN_EXIT_ARENA && you.props.exists(OKAWARU_DUEL_ITEMS_KEY))
@@ -1631,9 +1633,9 @@ void update_portal_entrances()
     // add any portals not currently registered
     for (rectangle_iterator ri(0); ri; ++ri)
     {
-        dungeon_feature_type feat = env.grid(*ri);
+        dungeon_feature_type feat = feat_at_no_mimic(*ri);
         // excludes pan, hell, abyss.
-        if (feat_is_portal_entrance(feat) && !feature_mimic_at(*ri))
+        if (feat_is_portal_entrance(feat))
         {
             level_id whither = stair_destination(feat, "", false);
             if (whither.branch == BRANCH_ZIGGURAT // not (quite) pregenerated
@@ -2032,7 +2034,7 @@ static void _rescue_player_from_wall()
         }
         // if things get this messed up, don't make them worse
         ASSERT(in_bounds(target));
-        you.moveto(target);
+        you.move_to(target, MV_INTERNAL);
     }
 }
 
@@ -2043,7 +2045,7 @@ static void _fixup_transmuters()
         { SPELL_BEASTLY_APPENDAGE, TALISMAN_QUILL },
         { SPELL_SPIDER_FORM,       TALISMAN_SPIDER },
         { SPELL_ICE_FORM,          TALISMAN_SERPENT },
-        { SPELL_BLADE_HANDS,       TALISMAN_BLADE },
+        { SPELL_BLADE_HANDS,       TALISMAN_EEL },
         { SPELL_STATUE_FORM,       TALISMAN_STATUE },
         { SPELL_DRAGON_FORM,       TALISMAN_DRAGON },
         { SPELL_STORM_FORM,        TALISMAN_STORM },
@@ -2088,10 +2090,6 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
     const string level_name = level_id::current().describe();
     if (!you.save->has_chunk(level_name) && load_mode == LOAD_VISITOR)
         return false;
-
-    const bool fast = load_mode == LOAD_ENTER_LEVEL_FAST;
-    if (fast)
-        load_mode = LOAD_ENTER_LEVEL;
 
     const bool make_changes =
         (load_mode == LOAD_START_GAME || load_mode == LOAD_ENTER_LEVEL);
@@ -2253,8 +2251,11 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
         env.markers.activate_all(message);
     }
 
-    if (make_changes && env.elapsed_time && !just_created_level && !descent_peek)
+    if (make_changes && env.elapsed_time && !just_created_level && !descent_peek
+        && stair_taken != DNGN_EXIT_ARENA)
+    {
         update_level(you.elapsed_time - env.elapsed_time);
+    }
 
     // Apply all delayed actions, if any. TODO: logic for marshalling this is
     // kind of odd.
@@ -2319,14 +2320,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
                 descent_crumble_stairs(); // no sense waiting
         }
         else
-        {
-            // new stairs have less wary monsters, and we don't
-            // want them to attack players quite as soon.
-            // (just_created_level only relevant if we crashed.)
-            const bool fast_entry = fast || just_created_level;
-            you.time_taken *= fast_entry ? 1 : 2;
-            you.time_taken = div_rand_round(you.time_taken * 3, 4);
-        }
+            you.time_taken = div_rand_round(you.time_taken * 3, 2);
 
         if (just_created_level)
             run_map_epilogues();
@@ -2512,6 +2506,13 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
     if (make_changes)
         maybe_break_floor_gem();
 
+    // When entering another floor, make monsters in sight of the player's
+    // arrival, but which the player has never seen before, skip their first turn.
+    if (make_changes)
+        for (monster_near_iterator mi(you.pos()); mi; ++mi)
+            if (!(mi->flags & MF_SEEN))
+                mi->flags |= MF_JUST_SUMMONED;
+
 #if TAG_MAJOR_VERSION == 34
     if (make_changes && you.props.exists("zig-fixup")
         && you.where_are_you == BRANCH_TOMB
@@ -2546,16 +2547,16 @@ void save_level(const level_id& lid)
 }
 
 #if TAG_MAJOR_VERSION == 34
-# define CHUNK(short, long) short
+# define CHUNK(short_name, long_name) short_name
 #else
-# define CHUNK(short, long) long
+# define CHUNK(short_name, long_name) long_name
 #endif
 
-#define SAVEFILE(short, long, savefn)           \
-    do                                          \
-    {                                           \
-        writer w(you.save, CHUNK(short, long)); \
-        savefn(w);                              \
+#define SAVEFILE(short_name, long_name, savefn)           \
+    do                                                    \
+    {                                                     \
+        writer w(you.save, CHUNK(short_name, long_name)); \
+        savefn(w);                                        \
     } while (false)
 
 // Stack allocated string's go in separate function, so Valgrind doesn't
@@ -2583,6 +2584,9 @@ static void _save_game_base()
 
     /* messages */
     SAVEFILE("msg", "messages", save_messages);
+
+    /* dlua errors */
+    SAVEFILE("de", "dlua_errors", save_dlua_errors);
 
     /* tile dolls (empty for ASCII)*/
 #ifdef USE_TILE
@@ -2969,9 +2973,10 @@ vector<ghost_demon> load_bones_file(string ghost_filename, bool backup)
     }
     inf.close();
 
-    if (!debug_check_ghosts(result))
+    string err_msg;
+    if (!debug_check_ghosts(result, err_msg))
     {
-        string error = "Bones file is buggy: " + ghost_filename;
+        string error = "Bones file is buggy: " + ghost_filename + "\n" + err_msg;;
         throw corrupted_save(error, version);
     }
 
@@ -3323,10 +3328,18 @@ static bool _restore_game(const string& filename)
         load_messages(inf);
     }
 
+    /* dlua errors */
+    if (you.save->has_chunk(CHUNK("de", "dlua_errors")))
+    {
+        reader inf(you.save, CHUNK("de", "dlua_errors"), minorVersion);
+        load_dlua_errors(inf);
+    }
+
     // Handle somebody SIGHUP'ing out of the skill menu with every skill
     // disabled. Doing this here rather in tags code because it can trigger
     // UI, which may not be safe if everything isn't fully loaded.
     check_selected_skills();
+    init_four_winds();
 
     return true;
 }
@@ -3574,6 +3587,24 @@ static bool _convert_obsolete_species()
                 "if you want to remain a Vampire.");
         }
         change_species_to(SP_HUMAN);
+        return true;
+    }
+    else if (you.species == SP_ARMATAUR)
+    {
+        if (!yesno(
+            "This Armataur save game cannot be loaded as-is. If you load it now,\n"
+            "your character will be converted to an Anemocentaur. Continue?",
+                       false, 'N'))
+        {
+            you.save->abort(); // don't even rewrite the header
+            delete you.save;
+            you.save = 0;
+            game_ended(game_exit::abort,
+                "Please load the save in an earlier version "
+                "if you want to remain an Armataur.");
+        }
+        change_species_to(SP_ANEMOCENTAUR);
+        you.duration[DUR_STAMPEDE] = 0; // Was DUR_ROLLPAGE
         return true;
     }
 #endif

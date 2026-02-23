@@ -172,6 +172,12 @@ bool spell_data_initialized()
     return _get_spell_name_cache().size() > 0;
 }
 
+bool spell_is_monster_only(spell_type s)
+{
+    return testbits(get_spell_flags(s), spflag::monster);
+}
+
+
 spell_type spell_by_name(string name, bool partial_match)
 {
     if (name.empty())
@@ -182,8 +188,24 @@ spell_type spell_by_name(string name, bool partial_match)
     if (!partial_match)
         return lookup(_get_spell_name_cache(), name, SPELL_NO_SPELL);
 
-    const spell_type sp = find_earliest_match(name, SPELL_NO_SPELL, NUM_SPELLS,
-                                              is_valid_spell, spell_title);
+    // First try castable spells.
+    spell_type sp = find_earliest_match(
+        name, SPELL_NO_SPELL, NUM_SPELLS,
+        [](spell_type s)
+        {
+            return is_valid_spell(s)
+                   && !spell_removed(s)
+                   && !spell_is_monster_only(s);
+        },
+        spell_title);
+
+    if (sp == NUM_SPELLS)
+    {
+        // Fall back to include remove spells.
+        sp = find_earliest_match(name, SPELL_NO_SPELL, NUM_SPELLS,
+                                 is_valid_spell, spell_title);
+    }
+
     return sp == NUM_SPELLS ? SPELL_NO_SPELL : sp;
 }
 
@@ -456,23 +478,6 @@ bool spell_harms_target(spell_type spell)
         return true;
 
     // n.b. this excludes various untargeted attack spells like hailstorm, MCC
-
-    return false;
-}
-
-bool spell_harms_area(spell_type spell)
-{
-    const spell_flags flags = _seekspell(spell)->flags;
-
-    if (flags & (spflag::helpful | spflag::aim_at_space))
-    {
-        // XXX: This is a 'helpful' spell that also does area damage, so monster
-        //      logic should account for this, regarding Sanctuary.
-        return spell == SPELL_PERCUSSIVE_TEMPERING;
-    }
-
-    if (flags & spflag::area)
-        return true;
 
     return false;
 }
@@ -1338,7 +1343,7 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
                 return "this spell is already in effect.";
             if (player_movement_speed(false) <= FASTEST_PLAYER_MOVE_SPEED)
                 return "you're already travelling as fast as you can.";
-            if (!you.is_motile())
+            if (you.cannot_move())
                 return "you can't move.";
         }
         break;
@@ -1414,7 +1419,7 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
         // a drastically simplified version of it
         if (!temp)
             break;
-        if (!you.is_motile())
+        if (you.cannot_move())
             return "you can't move.";
         if (!passwall_simplified_check(you))
             return "you aren't next to any passable walls.";
@@ -1479,7 +1484,7 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
         break;
 
     case SPELL_MOMENTUM_STRIKE:
-        if (temp && !you.is_motile())
+        if (temp && you.cannot_move())
             return "you cannot redirect your momentum while unable to move.";
         break;
 
@@ -1488,7 +1493,7 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
             return "your stasis prevents you from launching yourself.";
         if (temp)
         {
-            if (!you.is_motile())
+            if (you.cannot_move())
                 return "you cannot launch yourself while unable to move.";
             if (you.no_tele(true))
                 return lowercase_first(you.no_tele_reason(true));
@@ -1533,8 +1538,8 @@ string spell_uselessness_reason(spell_type spell, bool temp, bool prevent,
         break;
 
     case SPELL_HELLFIRE_MORTAR:
-        if (temp && count_summons(&you, SPELL_HELLFIRE_MORTAR) > 0)
-            return "you already have an active mortar!";
+        if (temp && you.duration[DUR_HELLFIRE_MORTAR_COOLDOWN])
+            return "you must wait for your last cast of this to end!";
         break;
 
     case SPELL_STARBURST:
@@ -1691,10 +1696,8 @@ bool spell_no_hostile_in_range(spell_type spell)
 
     // Special handling for cloud spells.
     case SPELL_FREEZING_CLOUD:
-    case SPELL_POISONOUS_CLOUD:
-    case SPELL_HOLY_BREATH:
     {
-        targeter_cloud tgt(&you, spell_to_cloud(spell), range);
+        targeter_cloud tgt(&you, CLOUD_COLD, range);
         for (radius_iterator ri(you.pos(), range, C_SQUARE, LOS_NO_TRANS);
              ri; ++ri)
         {
@@ -1763,6 +1766,9 @@ bool spell_no_hostile_in_range(spell_type spell)
         return true;
 
     case SPELL_SCORCH:
+        return find_near_hostiles(range, false, you).empty();
+
+    case SPELL_ISKENDERUNS_MYSTIC_BLAST:
         return find_near_hostiles(range, false, you).empty();
 
     case SPELL_ANGUISH:
@@ -1962,7 +1968,7 @@ const vector<spell_type> *soh_breath_spells(spell_type spell)
               SPELL_FIREBALL } },
         { SPELL_SERPENT_OF_HELL_COC_BREATH,
             { SPELL_COLD_BREATH,
-              SPELL_FREEZING_CLOUD,
+              SPELL_FREEZING_GUST,
               SPELL_FLASH_FREEZE } },
         { SPELL_SERPENT_OF_HELL_DIS_BREATH,
             { SPELL_IRON_SHOT,
@@ -2007,6 +2013,15 @@ bool spell_can_be_enkindled(spell_type spell)
     }
 }
 
+// Spells to escape from a net more swiftly.
+bool is_monster_net_escape_spell(spell_type spell)
+{
+    return spell == SPELL_BLINK
+            || spell == SPELL_BLINK_AWAY
+            || spell == SPELL_BLINK_RANGE
+            || spell == SPELL_BLINK_CLOSE;
+}
+
 /* How to regenerate this:
    comm -2 -3 \
     <(clang -P -E -nostdinc -nobuiltininc spell-type.h -DTAG_MAJOR_VERSION=34 | sort) \
@@ -2036,11 +2051,12 @@ const set<spell_type> removed_spells =
     SPELL_CORRUPT_BODY,
     SPELL_CURE_POISON,
     SPELL_DARKNESS,
-    SPELL_DEFLECT_MISSILES,
+    SPELL_OLD_DEFLECT_MISSILES,
     SPELL_DELAYED_FIREBALL,
     SPELL_DEMONIC_HORDE,
     SPELL_DRACONIAN_BREATH,
     SPELL_DRAGON_FORM,
+    SPELL_DRAIN_MAGIC,
     SPELL_EPHEMERAL_INFUSION,
     SPELL_EVAPORATE,
     SPELL_EXCRUCIATING_WOUNDS,

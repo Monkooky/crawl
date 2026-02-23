@@ -22,6 +22,7 @@
 #include "exercise.h"
 #include "externs.h"
 #include "fprop.h"
+#include "god-abil.h"
 #include "god-passive.h"
 #include "items.h"
 #include "libutil.h"
@@ -29,6 +30,7 @@
 #include "message.h"
 #include "mgen-data.h"
 #include "monster.h"
+#include "mon-abil.h"
 #include "mon-behv.h"
 #include "mon-clone.h"
 #include "mon-death.h"
@@ -38,6 +40,7 @@
 #include "mutation.h"
 #include "notes.h"
 #include "player.h"
+#include "player-notices.h"
 #include "player-stats.h"
 #include "random.h"
 #include "religion.h"
@@ -51,6 +54,10 @@
 #include "teleport.h"
 #include "terrain.h"
 #include "tileview.h"
+#ifdef USE_TILE
+    #include "tile-env.h"
+    #include "tilepick.h"
+#endif
 #include "throw.h"
 #include "travel.h"
 #include "view.h"
@@ -256,7 +263,7 @@ static bool _multiplicity_clone(monster* mon)
         // No additional gear from these clones, but you can get XP.
         clone->mark_summoned(MON_SUMM_MULTIPLICITY);
         clone->flags |= (MF_NO_REWARD | MF_HARD_RESET);
-        clone->add_ench(mon_enchant(ENCH_FIGMENT, 0, nullptr, INFINITE_DURATION));
+        clone->add_ench(mon_enchant(ENCH_FIGMENT, nullptr, INFINITE_DURATION));
     }
 
     return true;
@@ -272,13 +279,6 @@ static void _maybe_mortality_summon()
         {
             return;
         }
-    }
-
-    // Only activate a fraction of the times we're resting while injured.
-    if (coinflip())
-    {
-        you.props[MORTALITY_TIME_KEY] = you.elapsed_time + random_range(800, 1300);
-        return;
     }
 
     // Summon permaslow reapers at low XL, and scale the number with XL also.
@@ -304,16 +304,16 @@ static void _maybe_mortality_summon()
         if (monster* mon = create_monster(mg))
         {
             created = true;
-            mon->add_ench(mon_enchant(ENCH_WARDING, 0, nullptr, INFINITE_DURATION));
+            mon->add_ench(mon_enchant(ENCH_WARDING, nullptr, INFINITE_DURATION));
             if (slow)
-                mon->add_ench(mon_enchant(ENCH_SLOW, 0, nullptr, INFINITE_DURATION));
+                mon->add_ench(mon_enchant(ENCH_SLOW, nullptr, INFINITE_DURATION));
         }
     }
 
     if (created)
     {
         mprf("Death has come for you....");
-        you.props[MORTALITY_TIME_KEY] = you.elapsed_time + random_range(3500, 6500);
+        you.props[MORTALITY_TIME_KEY] = you.elapsed_time + random_range(2250, 4500);
     }
 }
 
@@ -321,7 +321,7 @@ static void _bane_triggers(int /*time_delta*/)
 {
     if (you.has_bane(BANE_MULTIPLICITY)
         && you.elapsed_time > you.props[MULTIPLICITY_TIME_KEY].get_int()
-        && coinflip())
+        && one_chance_in(3))
     {
         vector<monster*> to_clone;
         for (monster_near_iterator mi(you.pos(), LOS_NO_TRANS); mi; ++mi)
@@ -329,6 +329,8 @@ static void _bane_triggers(int /*time_delta*/)
             if (!mons_aligned(&you, *mi) && !mi->is_summoned()
                 && !mi->is_peripheral() && !mons_is_unique(mi->type)
                 && !mi->has_ench(ENCH_FIGMENT)
+                && !mi->has_spell(SPELL_ILL_OMEN)
+                && !mi->has_attack_flavour(AF_DOOM)
                 && !mons_is_immotile(**mi))
             {
                 to_clone.push_back(*mi);
@@ -355,7 +357,7 @@ static void _bane_triggers(int /*time_delta*/)
 
         // Apply cooldown.
         if (did_clone)
-            you.props[MULTIPLICITY_TIME_KEY] = you.elapsed_time + random_range(150, 400);
+            you.props[MULTIPLICITY_TIME_KEY] = you.elapsed_time + random_range(270, 600);
 
         if (seen)
         {
@@ -366,7 +368,7 @@ static void _bane_triggers(int /*time_delta*/)
 
     if (you.has_bane(BANE_MORTALITY)
         && you.elapsed_time > you.props[MORTALITY_TIME_KEY].get_int()
-        && you.hp * 2 < you.hp_max)
+        && you.hp * 10 <= you.hp_max * 4)
     {
         _maybe_mortality_summon();
     }
@@ -440,6 +442,8 @@ void handle_time()
                 if (x_chance_in_y(i, 5))
                     spawn_random_monsters();
         }
+
+        notice_queued_monsters();
     }
 
     // Abyss maprot.
@@ -475,199 +479,37 @@ void handle_time()
     }
 }
 
-/**
- * Make ranged monsters flee from the player during their time offlevel.
- *
- * @param mon           The monster in question.
- */
-static void _monster_flee(monster *mon)
+static void _timeout_enchantment(monster& mon, mon_enchant& ench, int time)
 {
-    mon->behaviour = BEH_FLEE;
-    dprf("backing off...");
-
-    if (mon->pos() != mon->target)
-        return;
-    // If the monster is on the target square, fleeing won't work.
-
-    if (in_bounds(env.old_player_pos) && env.old_player_pos != mon->pos())
+    if (ench.duration <= time)
+        mon.del_ench(ench.ench, true);
+    else
     {
-        // Flee from player's old position if different.
-        mon->target = env.old_player_pos;
-        return;
+        ench.duration -= time;
+        mon.update_ench(ench);
     }
-
-    // Randomise the target so we have a direction to flee.
-    coord_def mshift;
-    mshift.x = random2(3) - 1;
-    mshift.y = random2(3) - 1;
-
-    // Bounds check: don't let fleeing monsters try to run off the grid.
-    const coord_def s = mon->target + mshift;
-    if (!in_bounds_x(s.x))
-        mshift.x = 0;
-    if (!in_bounds_y(s.y))
-        mshift.y = 0;
-
-    mon->target.x += mshift.x;
-    mon->target.y += mshift.y;
-
-    return;
 }
 
 /**
- * Make a monster take a number of moves toward (or away from, if fleeing)
- * their current target, very crudely.
+ * Update a monster's enchantments as if a large amount of time had passed.
  *
- * @param mon       The mon in question.
- * @param moves     The number of moves to take.
+ * This directly subtracts a given amount of time from all enchantments
+ * (without processing any per-tick effects) and then either outright deletes
+ * any enchantments that have expired, or performs a single tick of them (to
+ * handle certain types of end effects) if the player is off-level.
+ *
+ * Used both when the player returns to a floor after being away for a while,
+ * or to 'heal' a variety of effects from monsters avoiding death or being
+ * recalled from another floor.
+ *
+ * @param time  How many aut to simulate passing.
  */
-static void _catchup_monster_move(monster* mon, int moves)
-{
-    coord_def pos(mon->pos());
-
-    // Dirt simple movement.
-    for (int i = 0; i < moves; ++i)
-    {
-        coord_def inc(mon->target - pos);
-        inc = coord_def(sgn(inc.x), sgn(inc.y));
-
-        if (mons_is_retreating(*mon))
-            inc *= -1;
-
-        // Bounds check: don't let shifting monsters try to run off the
-        // grid.
-        const coord_def s = pos + inc;
-        if (!in_bounds_x(s.x))
-            inc.x = 0;
-        if (!in_bounds_y(s.y))
-            inc.y = 0;
-
-        if (inc.origin())
-            break;
-
-        const coord_def next(pos + inc);
-        const dungeon_feature_type feat = env.grid(next);
-        if (feat_is_solid(feat)
-            || monster_at(next)
-            || !monster_habitable_feat(mon, feat))
-        {
-            break;
-        }
-
-        pos = next;
-    }
-
-    if (!mon->shift(pos))
-        mon->shift(mon->pos());
-}
-
-/**
- * Move monsters around to fake them walking around while player was
- * off-level.
- *
- * Does not account for monster move speeds.
- *
- * Also make them forget about the player over time.
- *
- * @param mon       The monster under consideration
- * @param turns     The number of offlevel player turns to simulate.
- */
-static void _catchup_monster_moves(monster* mon, int turns)
-{
-    // Summoned monsters might have disappeared.
-    if (!mon->alive())
-        return;
-
-    // Don't move non-land or stationary monsters around.
-    if (!(mons_habitat(*mon) & HT_DRY_LAND)
-        || mons_is_zombified(*mon)
-           && !(mons_class_habitat(mon->base_monster) & HT_DRY_LAND)
-        || mon->is_stationary())
-    {
-        return;
-    }
-
-    // special movement code for ioods
-    if (mons_is_projectile(*mon))
-    {
-        iood_catchup(mon, turns);
-        return;
-    }
-
-    // Let sleeping monsters lie.
-    if (mon->asleep() || mon->paralysed())
-        return;
-
-    // Don't shift towards timestepped players.
-    if (mon->target.origin())
-        return;
-
-    const int mon_turns = (turns * mon->speed) / 10;
-    const int moves = min(mon_turns, 50);
-
-    // probably too annoying even for DEBUG_DIAGNOSTICS
-    dprf("mon #%d: range %d; "
-         "pos (%d,%d); targ %d(%d,%d); flags %" PRIx64,
-         mon->mindex(), mon_turns, mon->pos().x, mon->pos().y,
-         mon->foe, mon->target.x, mon->target.y, mon->flags.flags);
-
-    if (mon_turns <= 0)
-        return;
-
-    // restore behaviour later if we start fleeing
-    unwind_var<beh_type> saved_beh(mon->behaviour);
-
-    if (mons_has_ranged_attack(*mon))
-    {
-        // If we're doing short time movement and the monster has a
-        // ranged attack (missile or spell), then the monster will
-        // flee to gain distance if it's "too close", else it will
-        // just shift its position rather than charge the player. -- bwr
-        if (grid_distance(mon->pos(), mon->target) >= 3)
-        {
-            mon->shift(mon->pos());
-            dprf("shifted to (%d, %d)", mon->pos().x, mon->pos().y);
-            return;
-        }
-
-        _monster_flee(mon);
-    }
-
-    _catchup_monster_move(mon, moves);
-
-    dprf("moved to (%d, %d)", mon->pos().x, mon->pos().y);
-}
-
-/**
- * Update a monster's enchantments when the player returns
- * to the level.
- *
- * Management for enchantments... problems with this are the oddities
- * (monster dying from poison several thousands of turns later), and
- * game balance.
- *
- * Consider: Poison/Sticky Flame a monster at range and leave, monster
- * dies but can't leave level to get to player (implied game balance of
- * the delayed damage is that the monster could be a danger before
- * it dies). This could be fixed by keeping some monsters active
- * off level and allowing them to take stairs (a very serious change).
- *
- * Compare this to the current abuse where the player gets
- * effectively extended duration of these effects (although only
- * the actual effects only occur on level, the player can leave
- * and heal up without having the effect disappear).
- *
- * This is a simple compromise between the two... the enchantments
- * go away, but the effects don't happen off level.  -- bwr
- *
- * @param levels XXX: sometimes the missing aut/10, sometimes aut/100
- */
-void monster::timeout_enchantments(int levels)
+void monster::timeout_enchantments(int time)
 {
     if (enchantments.empty())
         return;
 
-    const mon_enchant_list ec = enchantments;
+    mon_enchant_list ec = enchantments;
     for (auto &entry : ec)
     {
         if (entry.second.duration >= INFINITE_DURATION)
@@ -679,7 +521,7 @@ void monster::timeout_enchantments(int levels)
         case ENCH_STICKY_FLAME: case ENCH_SUMMON_TIMER:
         case ENCH_HASTE: case ENCH_MIGHT: case ENCH_FEAR:
         case ENCH_CHARM: case ENCH_SLEEP_WARY: case ENCH_SICK:
-        case ENCH_PARALYSIS: case ENCH_PETRIFYING:
+        case ENCH_PARALYSIS:
         case ENCH_PETRIFIED: case ENCH_SWIFT: case ENCH_SILENCE:
         case ENCH_LOWERED_WL: case ENCH_SOUL_RIPE: case ENCH_ANTIMAGIC:
         case ENCH_REGENERATION: case ENCH_STRONG_WILLED:
@@ -689,8 +531,8 @@ void monster::timeout_enchantments(int levels)
         case ENCH_SCREAMED: case ENCH_BLIND: case ENCH_WORD_OF_RECALL:
         case ENCH_INJURY_BOND: case ENCH_FLAYED: case ENCH_BARBS:
         case ENCH_AGILE: case ENCH_FROZEN: case ENCH_VITRIFIED:
-        case ENCH_SIGN_OF_RUIN: case ENCH_SAP_MAGIC: case ENCH_NEUTRAL_BRIBED:
-        case ENCH_FRIENDLY_BRIBED: case ENCH_CORROSION:
+        case ENCH_SIGN_OF_RUIN: case ENCH_SAP_MAGIC:
+        case ENCH_CORROSION:
         case ENCH_RESISTANCE: case ENCH_HEXED: case ENCH_IDEALISED:
         case ENCH_BOUND_SOUL: case ENCH_STILL_WINDS: case ENCH_DRAINED:
         case ENCH_ANGUISH: case ENCH_FIRE_VULN: case ENCH_SPELL_CHARGED:
@@ -702,58 +544,51 @@ void monster::timeout_enchantments(int levels)
         case ENCH_CHAOS_LACE: case ENCH_VEXED: case ENCH_DEEP_SLEEP:
         case ENCH_DROWSY: case ENCH_PARADOX_TOUCHED: case ENCH_DIMINISHED_SPELLS:
         case ENCH_ORB_COOLDOWN:
-            lose_ench_levels(entry.second, levels);
+        case ENCH_ARMED: case ENCH_AWAKEN_FOREST: case ENCH_BLINKITIS:
+        case ENCH_CHANGED_APPEARANCE: case ENCH_CHANNEL_SEARING_RAY:
+        case ENCH_CONSTRICTED: case ENCH_CURSE_OF_AGONY:
+        case ENCH_DIMENSION_ANCHOR: case ENCH_DOUBLED_VIGOUR: case ENCH_DUMB:
+        case ENCH_FLIGHT: case ENCH_HATCHING: case ENCH_INSTANT_CLEAVE:
+        case ENCH_KINETIC_GRAPNEL: case ENCH_MAD: case ENCH_MISDIRECTED:
+        case ENCH_MUTE: case ENCH_PHALANX_BARRIER: case ENCH_POISON_VULN:
+        case ENCH_POLAR_VORTEX: case ENCH_POLAR_VORTEX_COOLDOWN:
+        case ENCH_PORTAL_PACIFIED: case ENCH_PORTAL_TIMER: case ENCH_RECITE_TIMER:
+        case ENCH_DEFLECT_MISSILES: case ENCH_WARDING: case ENCH_FLOODED:
+        case ENCH_INNER_FLAME:
+        case ENCH_ROLLING: case ENCH_MERFOLK_AVATAR_SONG: case ENCH_INFESTATION:
+        case ENCH_HELD: case ENCH_BULLSEYE_TARGET: case ENCH_FATIGUE:
+        case ENCH_TIDE: case ENCH_SLOWLY_DYING:
+            _timeout_enchantment(*this, entry.second, time);
+            break;
+
+        case ENCH_FRENZIED: case ENCH_BERSERK:
+            _timeout_enchantment(*this, entry.second, time);
+            if (has_ench(ENCH_FATIGUE))
+            {
+                // Removing fatigue will also remove slow, if enough time has passed.
+                mon_enchant fatigue = get_ench(ENCH_FATIGUE);
+                _timeout_enchantment(*this, fatigue, time - entry.second.duration);
+            }
+            break;
+
+        case ENCH_PETRIFYING:
+            _timeout_enchantment(*this, entry.second, time);
+            if (has_ench(ENCH_PETRIFIED))
+            {
+                mon_enchant petr = get_ench(ENCH_PETRIFIED);
+                _timeout_enchantment(*this, petr, time - entry.second.duration);
+            }
             break;
 
         case ENCH_INVIS:
             if (!mons_class_flag(type, M_INVIS))
-                lose_ench_levels(entry.second, levels);
-            break;
-
-        case ENCH_FRENZIED:
-        case ENCH_BERSERK:
-        case ENCH_INNER_FLAME:
-        case ENCH_ROLLING:
-        case ENCH_MERFOLK_AVATAR_SONG:
-        case ENCH_INFESTATION:
-        case ENCH_HELD:
-        case ENCH_BULLSEYE_TARGET:
-            del_ench(entry.first);
-            break;
-
-        case ENCH_FATIGUE:
-            del_ench(entry.first);
-            del_ench(ENCH_SLOW);
-            break;
-
-        case ENCH_TP:
-            teleport(true);
-            del_ench(entry.first);
+                _timeout_enchantment(*this, entry.second, time);
             break;
 
         case ENCH_CONFUSION:
             if (!mons_class_flag(type, M_CONFUSED))
-                del_ench(entry.first);
-            // That triggered a behaviour_event, which could have made a
-            // pacified monster leave the level.
-            if (alive() && !is_stationary())
-                monster_blink(this, true, true);
+                _timeout_enchantment(*this, entry.second, time);
             break;
-
-        case ENCH_TIDE:
-        {
-            const int actdur = speed_to_duration(speed) * levels;
-            lose_ench_duration(entry.first, actdur);
-            break;
-        }
-
-        case ENCH_SLOWLY_DYING:
-        {
-            const int actdur = speed_to_duration(speed) * levels;
-            if (lose_ench_duration(entry.first, actdur))
-                monster_die(*this, KILL_NON_ACTOR, NON_MONSTER, true);
-            break;
-        }
 
         default:
             break;
@@ -773,89 +608,62 @@ void update_level(int elapsedTime)
 {
     ASSERT(!crawl_state.game_is_arena());
 
-    const int turns = elapsedTime / 10;
+    // Simulate up to 10 turns on the floor, then merely update durations and
+    // effects for the remaining time.
+    const int sim_turns = min(10, elapsedTime / 10);
+    elapsedTime -= sim_turns * 10;
+    const int quick_turns = (elapsedTime - (sim_turns * 10)) / 10;
 
-#ifdef DEBUG_DIAGNOSTICS
-    int mons_total = 0;
+    delete_all_clouds();
 
-    dprf("turns: %d", turns);
-#endif
+    // First, simulate up to 10 turns of monster movement and activity.
+    simulate_time_passing(sim_turns);
 
+    // Then simply time out effects for the remaining time.
     rot_corpses(elapsedTime);
-    shoals_apply_tides(turns, true);
-    timeout_tombs(turns);
+    shoals_apply_tides(quick_turns, true);
+    timeout_tombs(elapsedTime);
     timeout_terrain_changes(elapsedTime);
 
     if (env.sanctuary_time)
     {
         // XX this doesn't guarantee that the final FPROP will be removed?
-        if (turns >= env.sanctuary_time)
+        if (quick_turns >= env.sanctuary_time)
             remove_sanctuary();
         else
-            env.sanctuary_time -= turns;
+            env.sanctuary_time -= quick_turns;
     }
 
     dungeon_events.fire_event(
-        dgn_event(DET_TURN_ELAPSED, coord_def(0, 0), turns * 10));
+        dgn_event(DET_TURN_ELAPSED, coord_def(0, 0), (sim_turns + quick_turns) * 10));
 
     for (monster_iterator mi; mi; ++mi)
-    {
-#ifdef DEBUG_DIAGNOSTICS
-        mons_total++;
-#endif
-
-        if (!update_monster(**mi, turns))
+        if (!update_monster(**mi, elapsedTime))
             continue;
-    }
-
-#ifdef DEBUG_DIAGNOSTICS
-    dprf("total monsters on level = %d", mons_total);
-#endif
-
-    delete_all_clouds();
 }
 
 /**
  * Update the monster upon the player's return
  *
  * @param mon   The monster to update.
- * @param turns How many turns (not auts) since the monster left the player
+ * @param time  How many auts since the monster left the player
  * @returns     Returns nullptr if monster was destroyed by the update;
  *              Returns the updated monster if it still exists.
  */
-monster* update_monster(monster& mon, int turns)
+monster* update_monster(monster& mon, int time)
 {
     // Pacified monsters often leave the level now.
-    if (mon.pacified() && turns > random2(40) + 21)
+    if (mon.pacified() && time > random_range(210, 400))
     {
         make_mons_leave_level(&mon);
         return nullptr;
     }
 
-    // Ignore monsters flagged to skip their next action
-    if (mon.flags & MF_JUST_SUMMONED)
-        return &mon;
+    mon.heal(div_rand_round(time * mon.off_level_regen_rate(), 1000));
+    mon.timeout_enchantments(time);
 
-    // XXX: Allow some spellcasting (like Healing and Teleport)? - bwr
-    // const bool healthy = (mon->hit_points * 2 > mon->max_hit_points);
-
-    mon.heal(div_rand_round(turns * mon.off_level_regen_rate(), 100));
-
-    // Handle nets specially to remove the trapping property of the net.
-    if (mon.caught())
-        mon.del_ench(ENCH_HELD, true);
-
-    _catchup_monster_moves(&mon, turns);
-
-    mon.foe_memory = max(mon.foe_memory - turns, 0);
-
-    // Yredelemnul bind soul requires the monster stay in our LOS
-    if (mon.has_ench(ENCH_SOUL_RIPE))
-        mon.del_ench(ENCH_SOUL_RIPE, true, false);
-
-    // FIXME:  Convert literal string 10 to constant to convert to auts
-    if (turns >= 10 && mon.alive())
-        mon.timeout_enchantments(turns / 10);
+    if (mon.type == MONS_SLYMDRA)
+        slymdra_split(mon, min(div_rand_round(time, 10), mon.num_heads - 4), true);
 
     return &mon;
 }
@@ -998,8 +806,8 @@ void timeout_malign_gateways(int duration)
                     int dur = random2avg(mmark->power, 6);
                     dur -= random2(4); // sequence point between random calls
                     dur *= 10;
-                    mon_enchant kduration = mon_enchant(ENCH_PORTAL_PACIFIED, 4,
-                        caster, dur);
+                    mon_enchant kduration = mon_enchant(ENCH_PORTAL_PACIFIED,
+                                                        caster, dur);
                     tentacle->props[BASE_POSITION_KEY].get_coord()
                                         = tentacle->pos();
                     tentacle->add_ench(kduration);
@@ -1088,14 +896,20 @@ void end_enkindled_status()
     you.props.erase(ENKINDLE_CHARGES_KEY);
 }
 
+struct terrain_change_reversion
+{
+    coord_def pos;
+    terrain_change_type type;
+    bool was_in_los;
+};
+
 void timeout_terrain_changes(int duration, bool force)
 {
     if (!duration && !force)
         return;
 
     int num_seen[NUM_TERRAIN_CHANGE_TYPES] = {0};
-    // n.b. unordered_set doesn't work here because pair isn't hashable
-    set<pair<coord_def, terrain_change_type>> revert;
+    vector<terrain_change_reversion> revert;
 
     for (map_marker *mark : env.markers.get_all(MAT_TERRAIN_CHANGE))
     {
@@ -1132,13 +946,34 @@ void timeout_terrain_changes(int duration, bool force)
         {
             if (you.see_cell(marker->pos))
                 num_seen[marker->change_type]++;
-            revert.insert(pair<coord_def, terrain_change_type>(marker->pos,
-                                                        marker->change_type));
+            revert.push_back({marker->pos, marker->change_type, you.see_cell(marker->pos)});
         }
     }
     // finally, revert the changes and delete the markers
+
+    // Sort terrain expiration from near to far, from the player's perspective
+    // (which results in more intuitive behavior when pushing the player out of walls).
+    sort(revert.begin(), revert.end(), [](const terrain_change_reversion& a,
+                                          const terrain_change_reversion& b)
+    {
+        return grid_distance(you.pos(), a.pos) < grid_distance(you.pos(), b.pos);
+    });
+
     for (const auto &m_pos : revert)
-        revert_terrain_change(m_pos.first, m_pos.second);
+    {
+        revert_terrain_change(m_pos.pos, m_pos.type);
+
+        // When multiple tiles are reverting at once, walls reappearing may
+        // obscure otherwise-unambiguous information about terrain behind them,
+        // so forcibly redraw anything the player could see at the start of them.
+        if (m_pos.was_in_los)
+        {
+            env.map_knowledge(m_pos.pos).set_feature(env.grid(m_pos.pos));
+#ifdef USE_TILE
+            tile_env.bk_bg(m_pos.pos) = tileidx_feature_base(env.grid(m_pos.pos));
+#endif
+        }
+    }
 
     if (num_seen[TERRAIN_CHANGE_DOOR_SEAL] > 1)
         mpr("The runic seals fade away.");
