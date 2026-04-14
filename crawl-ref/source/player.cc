@@ -193,16 +193,11 @@ bool check_moveto_cloud(const coord_def& p, const string &move_verb,
 bool check_moveto_trap(const coord_def& p, const string &move_verb,
                        bool *prompted)
 {
-    // Boldly go into the unknown (for ranged move prompts)
-    if (env.map_knowledge(p).trap() == TRAP_UNASSIGNED)
-        return true;
-
     // If there's no trap, let's go.
-    trap_def* trap = trap_at(p);
-    if (!trap)
+    if (!feat_is_trap(env.grid(p)))
         return true;
 
-    if (trap->type == TRAP_ZOT && !trap->is_safe() && !crawl_state.disables[DIS_CONFIRMATIONS])
+    if (env.grid(p) == DNGN_TRAP_ZOT && !trap_is_safe(DNGN_TRAP_ZOT) && !crawl_state.disables[DIS_CONFIRMATIONS])
     {
         string msg = "Do you really want to %s into the Zot trap?";
         string prompt = make_stringf(msg.c_str(), move_verb.c_str());
@@ -215,15 +210,15 @@ bool check_moveto_trap(const coord_def& p, const string &move_verb,
             return false;
         }
     }
-    else if (!trap->is_safe() && !crawl_state.disables[DIS_CONFIRMATIONS])
+    else if (!trap_is_safe(env.grid(p)) && !crawl_state.disables[DIS_CONFIRMATIONS])
     {
         string prompt;
 
         if (prompted)
             *prompted = true;
         prompt = make_stringf("Really %s %s that %s?", move_verb.c_str(),
-                              (trap->type == TRAP_ALARM
-                               || trap->type == TRAP_PLATE) ? "onto"
+                              (env.grid(p) == DNGN_TRAP_ALARM
+                               || env.grid(p) == DNGN_TRAP_PLATE) ? "onto"
                               : "into",
                               feature_description_at(p, false, DESC_BASENAME).c_str());
         if (!yesno(prompt.c_str(), true, 'n'))
@@ -481,7 +476,7 @@ bool swap_check(monster* mons, coord_def &loc, bool quiet)
     }
 
     // prompt when swapping into known zot traps
-    if (!quiet && trap_at(loc) && trap_at(loc)->type == TRAP_ZOT
+    if (!quiet && env.grid(loc) == DNGN_TRAP_ZOT
         && !confirm_prompt("yes", "Do you really want to swap %s into the Zot trap?",
                            mons->name(DESC_YOUR).c_str()))
     {
@@ -737,9 +732,8 @@ void player::finalise_movement(const actor* /*to_blame*/)
 
         // Traps go off.
         // (But not when losing flight - i.e., moving into the same tile)
-        trap_def* ptrap = trap_at(pos());
-        if (ptrap && (ptrap->type != TRAP_GOLUBRIA || !(last_move_flags & MV_GOLUBRIA)))
-            ptrap->trigger(you);
+        if (env.grid(pos()) != DNGN_PASSAGE_OF_GOLUBRIA || !(last_move_flags & MV_GOLUBRIA))
+            trigger_trap(you);
 
         // If a trap we triggered moved us, much of the rest of this produces
         // dubious results and should be skipped.
@@ -2824,7 +2818,7 @@ void calc_hp(bool scale)
         you.redraw_hit_points = true;
 
         if (you.hp == you.hp_max)
-            maybe_attune_regen_items(true, false);
+            you.check_hp_regen_attunement = true;
     }
 }
 
@@ -3866,7 +3860,8 @@ void dec_hp(int hp_loss, bool fatal, const char *aux)
 
 void calc_mp(bool scale)
 {
-    int old_max = you.max_magic_points;
+    const int old_mp = you.magic_points;
+    const int old_max = you.max_magic_points;
     you.max_magic_points = get_real_mp(true);
     if (scale)
     {
@@ -3878,7 +3873,14 @@ void calc_mp(bool scale)
     }
     else
         you.magic_points = min(you.magic_points, you.max_magic_points);
-    you.redraw_magic_points = true;
+
+    if (old_mp != you.magic_points || old_max != you.max_magic_points)
+    {
+        you.redraw_magic_points = true;
+
+        if (you.magic_points == you.max_magic_points)
+            you.check_mp_regen_attunement = true;
+    }
 }
 
 void flush_mp()
@@ -4048,6 +4050,9 @@ void inc_mp(int mp_gain, bool silent)
             interrupt_activity(activity_interrupt::full_mp);
         you.redraw_magic_points = true;
     }
+
+    if (you.magic_points == you.max_magic_points)
+        you.check_mp_regen_attunement = true;
 }
 
 // Note that "max_too" refers to the base potential, the actual
@@ -4072,6 +4077,9 @@ void inc_hp(int hp_gain, bool silent)
 
         you.redraw_hit_points = true;
     }
+
+    if (you.hp == you.hp_max)
+        you.check_hp_regen_attunement = true;
 }
 
 int undrain_hp(int hp_recovered)
@@ -5407,6 +5415,9 @@ player::player()
     max_magic_points = 0;
     mp_max_adj       = 0;
 
+    check_hp_regen_attunement = false;
+    check_mp_regen_attunement = false;
+
     base_stats.init(0);
 
     max_level       = 1;
@@ -5421,6 +5432,7 @@ player::player()
     zig_max          = 0;
 
     last_unequip = -1;
+    last_fired   = -1;
 
     symbol          = MONS_PLAYER;
     form            = transformation::none;
@@ -5608,9 +5620,11 @@ player::player()
     time_taken          = 0;
     shield_blocks       = 0;
     reprisals.clear();
+    whirlwind_targets.clear();
     triggers_done.init(0);
     attempted_attack    = false;
     did_east_wind       = 0;
+    explore_estimate    = 0;
 
     abyss_speed         = 0;
     game_seed           = 0;
@@ -8130,7 +8144,8 @@ void player::wake_up(bool break_sleep, bool break_daze)
         redraw_evasion = true;
     }
 
-    if (break_daze && you.duration[DUR_DAZED])
+    if (break_daze && you.duration[DUR_DAZED]
+        && you.elapsed_time > you.props[DAZED_ON_KEY].get_int())
     {
         duration[DUR_DAZED] = 0;
         give_stun_immunity(1);
@@ -8345,7 +8360,7 @@ bool player::attempt_escape()
         = constricted_type == CONSTRICT_ROOTS      ? "the roots'"
           : constricted_type == CONSTRICT_BVC      ? "the zombie hands'"
           : constricted_type == CONSTRICT_ENTANGLE ? "the vines'"
-                                        : themonst->name(DESC_ITS, true);
+          : you.can_see(*themonst) ? themonst->name(DESC_ITS, true) : "something's";
 
     if (x_chance_in_y(_constriction_escape_chance(escape_attempts), 100))
     {
@@ -8482,6 +8497,9 @@ void player::daze(int dur)
     stop_channelling_spells();
 
     you.duration[DUR_DAZED] += dur * BASELINE_DELAY;
+
+    // Note the turn we were dazed so that damage won't break it until the following turn.
+    you.props[DAZED_ON_KEY].get_int() = you.elapsed_time;
 }
 
 void player::vitrify(const actor* /*attacker*/, int dur, bool quiet)
@@ -8535,7 +8553,8 @@ bool need_expiration_warning(duration_type dur, dungeon_feature_type feat)
     if (dur == DUR_FLIGHT)
         return true;
     else if (dur == DUR_TRANSFORMATION
-             && (form_can_swim()) || form_can_fly())
+             && (form_can_fly() || form_can_swim())
+             && feat_dangerous_for_form(you.default_form, feat, you.active_talisman()))
     {
         return true;
     }
@@ -9258,7 +9277,7 @@ void refresh_meek_bonus()
     you.redraw_armour_class = true;
 }
 
-static bool _ench_triggers_trickster(enchant_type ench)
+bool ench_triggers_trickster(enchant_type ench)
 {
     switch (ench)
     {
@@ -9322,7 +9341,7 @@ static int _trickster_max_boost()
 // Increment AC boost when applying a negative status effect to a monster.
 void trickster_trigger(const monster& victim, enchant_type ench)
 {
-    if (!_ench_triggers_trickster(ench))
+    if (!ench_triggers_trickster(ench))
         return;
 
     if (!you.can_see(victim) || !you.see_cell_no_trans(victim.pos())

@@ -305,7 +305,7 @@ bool wizard_create_feature(dist &target, dungeon_feature_type feat, bool mimic)
             direction_chooser_args args;
             args.range = you.wizard_vision ? -1 : LOS_MAX_RANGE;
             args.restricts = DIR_TARGET;
-            args.mode = TARG_ANY;
+            args.mode = TARG_NON_ACTOR;
             args.needs_path = false;
             // TODO: a way to switch features while targeting?
             args.top_prompt = make_stringf(
@@ -329,11 +329,6 @@ bool wizard_create_feature(dist &target, dungeon_feature_type feat, bool mimic)
         if (feat == DNGN_ENTER_SHOP)
         {
             success = debug_make_shop(pos);
-            done = true;
-        }
-        else if (feat_is_trap(feat))
-        {
-            success = debug_make_trap(pos, trap_type_from_feature(feat));
             done = true;
         }
         else
@@ -465,45 +460,6 @@ void wizard_map_level()
         tiles.mark_for_redraw(*ri);
 #endif
     }
-}
-
-bool debug_make_trap(const coord_def& pos, trap_type trap)
-{
-    if (env.grid(pos) != DNGN_FLOOR)
-    {
-        mprf("You can only make a %s on a floor square.",
-             trap == TRAP_UNASSIGNED ? "trap" : full_trap_name(trap).c_str());
-        return false;
-    }
-
-    if (trap == TRAP_UNASSIGNED)
-    {
-        vector<WizardEntry> options;
-        for (int i = TRAP_FIRST_TRAP; i < NUM_TRAPS; ++i)
-        {
-            auto name = trap_name(static_cast<trap_type>(i));
-            options.emplace_back(WizardEntry(name, i));
-        }
-        sort(options.begin(), options.end());
-        options.emplace_back(WizardEntry('*', "any", TRAP_RANDOM));
-
-        auto menu = WizardMenu("Make which kind of trap?", options);
-        if (!menu.run(true))
-            return false;
-
-        trap = static_cast<trap_type>(menu.result());
-    }
-    place_specific_trap(pos, trap);
-
-    mprf("Created %s.",
-         (trap == TRAP_RANDOM)
-            ? "a random trap"
-            : trap_at(pos)->name(DESC_A).c_str());
-
-    if (trap == TRAP_SHAFT && !is_valid_shaft_level())
-        mpr("NOTE: Shaft traps aren't valid on this level.");
-
-    return true;
 }
 
 bool debug_make_shop(const coord_def& pos)

@@ -348,8 +348,6 @@ public:
 
     virtual bool liquefied_ground() const = 0;
 
-    virtual bool handle_trap();
-
     virtual void god_conduct(conduct_type /*thing_done*/, int /*level*/) { }
 
     virtual bool incapacitated() const
@@ -363,6 +361,9 @@ public:
     virtual bool wont_attack() const = 0;
     virtual mon_attitude_type temp_attitude() const = 0;
     virtual mon_attitude_type real_attitude() const = 0;
+    bool friendly() const;
+    bool neutral() const;
+    bool good_neutral() const;
 
     virtual bool has_spell(spell_type spell) const = 0;
 

@@ -475,7 +475,7 @@ static void _handle_hoarding()
 {
     if (you.has_mutation(MUT_RENOUNCE_POTIONS))
     {
-        if (you.hp < you.hp_max / 2)
+        if (2 * you.hp < you.hp_max)
             you.props.erase(RENOUNCE_POTIONS_TIMER_KEY);
         else if (there_are_monsters_nearby(true, true, false))
             you.props[RENOUNCE_POTIONS_TIMER_KEY].get_int() = you.elapsed_time + 60;
@@ -485,7 +485,7 @@ static void _handle_hoarding()
 
     if (you.has_mutation(MUT_RENOUNCE_SCROLLS))
     {
-        if (you.hp <= you.hp_max / 2)
+        if (2 * you.hp < you.hp_max)
             you.props.erase(RENOUNCE_SCROLLS_TIMER_KEY);
         else if (there_are_monsters_nearby(true, true, false))
             you.props[RENOUNCE_SCROLLS_TIMER_KEY].get_int() = you.elapsed_time + 60;
@@ -1138,8 +1138,13 @@ static void _handle_emergency_flight()
 // Regeneration and Magic Regeneration items only work if the player has reached
 // max hp/mp while they are being worn. This scans and updates such items when
 // the player refills their hp/mp.
-void maybe_attune_regen_items(bool attune_regen, bool attune_mana_regen)
+static void _maybe_attune_regen_items()
 {
+    bool attune_regen = you.check_hp_regen_attunement;
+    bool attune_mana_regen = you.check_mp_regen_attunement;
+    you.check_hp_regen_attunement = false;
+    you.check_mp_regen_attunement = false;
+
     if (!attune_regen && !attune_mana_regen)
         return;
 
@@ -1213,9 +1218,6 @@ static void _regenerate_hp_and_mp(int delay)
     if (crawl_state.disables[DIS_PLAYER_REGEN])
         return;
 
-    const int old_hp = you.hp;
-    const int old_mp = you.magic_points;
-
     // HP Regeneration
     if (!you.duration[DUR_DEATHS_DOOR])
     {
@@ -1264,11 +1266,6 @@ static void _regenerate_hp_and_mp(int delay)
 
         ASSERT_RANGE(you.magic_points_regeneration, 0, 100);
     }
-
-    // Update attunement of regeneration items if our hp/mp has refilled.
-    maybe_attune_regen_items(you.hp != old_hp && you.hp == you.hp_max,
-                             you.magic_points != old_mp
-                             && you.magic_points == you.max_magic_points);
 }
 
 static void _handle_fugue(int delay)
@@ -1367,13 +1364,13 @@ void player_reacts()
 
     actor_apply_toxic_bog(&you);
 
-    if (you.duration[DUR_SPIKE_LAUNCHER_ACTIVE])
-        handle_spike_launcher(you.time_taken);
-
     if (you.duration[DUR_RIME_YAK_AURA])
         frigid_walls_damage(you.time_taken);
 
     _regenerate_hp_and_mp(you.time_taken);
+
+    // Update attunement of regeneration items if our hp/mp has refilled.
+    _maybe_attune_regen_items();
 
     _decrement_durations();
 

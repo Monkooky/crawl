@@ -2457,8 +2457,7 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
                 && feat_stair_direction(feat) != CMD_NO_CMD
                 && feat_stair_direction(stair_taken) != CMD_NO_CMD)
             {
-                string stair_str = feature_description(feat, NUM_TRAPS, "",
-                                                       DESC_THE);
+                string stair_str = feature_description(feat, "", DESC_THE);
                 string verb = stair_climb_verb(feat);
 
                 if (coinflip()
@@ -3593,7 +3592,7 @@ static bool _convert_obsolete_species()
     {
         if (!yesno(
             "This Armataur save game cannot be loaded as-is. If you load it now,\n"
-            "your character will be converted to an Anemocentaur. Continue?",
+            "your character will be converted to a Gale Centaur. Continue?",
                        false, 'N'))
         {
             you.save->abort(); // don't even rewrite the header
@@ -3603,7 +3602,7 @@ static bool _convert_obsolete_species()
                 "Please load the save in an earlier version "
                 "if you want to remain an Armataur.");
         }
-        change_species_to(SP_ANEMOCENTAUR);
+        change_species_to(SP_GALE_CENTAUR);
         you.duration[DUR_STAMPEDE] = 0; // Was DUR_ROLLPAGE
         return true;
     }

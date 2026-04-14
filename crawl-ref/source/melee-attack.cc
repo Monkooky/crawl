@@ -394,7 +394,7 @@ void melee_attack::handle_phase_dodged()
         && defender->is_player()
         && attacker->alive()
         && !mons_aligned(attacker, defender) // confused friendlies attacking
-        && !attacker->as_monster()->neutral()) // don't anger neutrals, even if they hit you
+        && !attacker->neutral()) // don't anger neutrals, even if they hit you
     {
         // Active retaliations on the player's part require you to be able to act.
         if (you.can_see(*attacker) && !you.cannot_act() && !you.confused())
@@ -1120,7 +1120,7 @@ bool melee_attack::handle_phase_aux()
         // returns whether an aux attack successfully took place
         // additional attacks from cleave don't get aux
         const int aux_dist = you.form == transformation::aqua ? 3 : 1;
-        if (!defender->as_monster()->friendly()
+        if (!defender->friendly()
             && grid_distance(defender->pos(), attack_position) <= aux_dist)
         {
             player_do_aux_attacks();
@@ -1531,6 +1531,8 @@ bool melee_attack::swing_with(item_def &wpn)
     is_sunder |= swing.is_sunder;
     cancel_attack = swing.cancel_attack;
     is_attacking_hostiles = is_attacking_hostiles || swing.is_attacking_hostiles;
+    did_hit |= swing.did_hit;
+    total_damage_done += swing.total_damage_done;
     return success;
 }
 
@@ -2829,6 +2831,12 @@ void melee_attack::set_attack_verb(int damage)
             attack_verb = "hit";
         else
             attack_verb = "clumsily bash";
+
+        if (you.weapon() && you.weapon()->sub_type == WPN_ATHAME
+            && target_debuff_count() > 0)
+        {
+            verb_degree = "balefully";
+        }
         return;
     }
 
@@ -2871,6 +2879,11 @@ void melee_attack::set_attack_verb(int damage)
                 attack_verb = pierce_desc[choice][0];
                 verb_degree = pierce_desc[choice][1];
             }
+        }
+        if (you.weapon() && you.weapon()->sub_type == WPN_ATHAME
+            && target_debuff_count() > 0)
+        {
+            verb_degree = "balefully";
         }
         break;
 
@@ -4647,14 +4660,9 @@ void melee_attack::do_spines()
     }
     else if (defender->as_monster()->is_spiny())
     {
-        // Thorn hunters can attack their own brambles without injury
-        if (defender->type == MONS_BRIAR_PATCH
-            && attacker->type == MONS_THORN_HUNTER
-            // Don't let spines kill things out of LOS.
-            || !monster_los_is_valid(defender->as_monster(), attacker))
-        {
+        // Don't let friendly monster spines kill things out of LOS.
+        if (!monster_los_is_valid(defender->as_monster(), attacker))
             return;
-        }
 
         const bool cactus = defender->type == MONS_CACTUS_GIANT;
         if (attacker->alive() && (cactus || one_chance_in(3)))

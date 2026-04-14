@@ -1198,7 +1198,7 @@ void train_skills(bool simu)
     // We might have disabled some skills on level up.
     reset_training();
 
-    // Check if we need to update an anemocentaur's prevailing wind.
+    // Check if we need to update a gale centaur's prevailing wind.
     update_four_winds();
 }
 
@@ -1559,6 +1559,12 @@ void init_four_winds()
         const int sk_lv = you.skill(sk, 10, true, false);
         you.wind_category_weight[wind] = max(you.wind_category_weight[wind], sk_lv);
     }
+
+    // Set the current prevailing wind based on any mutations the player may
+    // already have (in case of ties, on file load).
+    for (int i = 0; i < 4; ++i)
+        if (you.has_mutation(static_cast<mutation_type>(MUT_NORTH_WIND + i)))
+            you.prevailing_wind = i;
 }
 
 // Checks if the prevailing wind has changed (or is nearing change) and gives
@@ -1573,6 +1579,16 @@ void update_four_winds(bool force_recheck)
 
     wind_skill_type prevailing = WIND_MELEE;
     int prevailing_amount = 0;
+
+    // In case of ties, stay with the wind you already had.
+    // (This is especially important once the player reaches 27 in a skill, so
+    // that the skill that first reaches that becomes 'locked in'.)
+    if (you.prevailing_wind != -1)
+    {
+        prevailing_amount = you.wind_category_weight[you.prevailing_wind];
+        prevailing = static_cast<wind_skill_type>(you.prevailing_wind);
+    }
+
     for (int i = 0; i < 4; ++i)
     {
         if (you.wind_category_weight[i] > prevailing_amount)
@@ -1627,10 +1643,7 @@ void update_four_winds(bool force_recheck)
             gap = min(gap, you.wind_category_weight[prevailing] - you.wind_category_weight[i]);
         }
         if (gap >= 15)
-        {
             you.gave_wind_change_warning = false;
-            mpr("Turning warning back on.");
-        }
     }
 
     you.wind_category_inc.init(false);

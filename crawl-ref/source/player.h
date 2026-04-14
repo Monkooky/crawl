@@ -64,6 +64,7 @@
 #define DEVIOUS_KEY "devious_stacks"
 #define FORCED_MESMERISE_KEY "forced_mesmerise"
 #define SALVO_KEY "salvo_stacks"
+#define DAZED_ON_KEY "dazed_on"
 
 constexpr int ENKINDLE_CHARGE_COST = 40;
 #define ENKINDLE_CHARGES_KEY "enkindle_charges"
@@ -133,7 +134,7 @@ enum player_trigger_type
     DID_MEDUSA_STINGER,  // Medusa form stinger attack
     DID_SOLAR_EMBER,     // Sun scarab ember attack
     DID_REV_UP,          // Coglin rev
-    DID_WEST_WIND_SHOT,  // Anemocentaur West Wind ranged attack
+    DID_WEST_WIND_SHOT,  // Gale Centaur West Wind ranged attack
     NUM_PLAYER_TRIGGER_TYPES,
 };
 
@@ -185,6 +186,9 @@ public:
     int magic_points;
     int max_magic_points;
     int mp_max_adj;             // max MP loss (ability costs, tutorial bonus)
+
+    bool check_hp_regen_attunement;
+    bool check_mp_regen_attunement;
 
     FixedVector<int8_t, NUM_STATS> base_stats;
 
@@ -450,8 +454,9 @@ public:
     spell_type last_cast_spell;
     map<int,int> last_pickup;
     int last_unequip;
+    int last_fired;     // Item slot last used with the 'F'ire command
 
-    // Highest skill level for each of anemocentaur winds
+    // Highest skill level for each gale centaur wind
     FixedVector<int, 4> wind_category_weight;
     // Whether a category increased since the last call to update_four_winds()
     FixedVector<bool, 4> wind_category_inc;
@@ -481,6 +486,10 @@ public:
     // (Is an int instead of a bool so that the visual for it can persist into
     // the start of the next turn without more complicated cleanup)
     int did_east_wind;
+
+    // The storage for Xom's floor exploration estimates. Ranges from 1 to 100,
+    // and is calculated to assess e.g. mapping / teleport effects.
+    int explore_estimate;
 
     // If true, player has triggered a trap effect by exploring.
     bool trapped;
@@ -526,6 +535,11 @@ public:
     // List of monsters the player has performed specific types of once-per-turn
     // effects against.
     vector<pair<mid_t, reprisal_type>> reprisals;
+
+    // List of monsters the player has performed a WJC Whirlwind attack against
+    // previously on a given turn (to prevent Whirlwinding the same enemy
+    // multiple times while rampaging).
+    set<mid_t> whirlwind_targets;
 
     // List of triggered actions that can happen a limited number of times a turn.
     FixedVector<int, NUM_PLAYER_TRIGGER_TYPES> triggers_done;
@@ -1247,6 +1261,7 @@ void activate_sanguine_armour();
 
 void refresh_weapon_protection();
 void refresh_meek_bonus();
+bool ench_triggers_trickster(enchant_type ench);
 
 void set_mp(int new_amount);
 

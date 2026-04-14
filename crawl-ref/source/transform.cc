@@ -1763,7 +1763,7 @@ bool feat_dangerous_for_form(transformation which_trans,
  */
 bool transforming_is_unsafe(transformation which_trans)
 {
-    if (feat_dangerous_for_form(transformation::none, env.grid(you.pos())))
+    if (feat_dangerous_for_form(which_trans, env.grid(you.pos())))
     {
         mprf(MSGCH_PROMPT, "%s right now would cause you to %s!",
                 which_trans == transformation::none ? "Untransforming" : "Transforming",
@@ -2244,7 +2244,7 @@ void untransform(bool skip_move, bool scale_hp, bool preserve_equipment,
     else if (old_form == transformation::rime_yak)
     {
         you.duration[DUR_RIME_YAK_AURA] = 0;
-        end_terrain_change(TERRAIN_CHANGE_RIME_YAK);
+        end_terrain_changes(TERRAIN_CHANGE_RIME_YAK);
     }
     else if (old_form == transformation::werewolf)
         you.duration[DUR_WEREFURY] = 0;

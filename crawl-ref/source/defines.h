@@ -62,7 +62,7 @@ enum extra_monster_index_type
 #define PAN_MONS_ALLOC 10
 #define MAX_MONS_ALLOC 20
 
-#define MAX_SUBTYPES   60
+#define MAX_SUBTYPES   64
 
 // max size of item list {dlb}:
 #define MAX_ITEMS 2000
@@ -310,8 +310,6 @@ const char * const THUNDERBOLT_AIM_KEY     = "thunderbolt_aim";
 #define FAKE_MON_KEY "fake"
 #define MMOV_KEY "mmov"
 #define BATTLESPHERE_KEY "battlesphere"
-#define FOE_APPROACHING_KEY "foe_approaching"
-#define FAUX_PAS_KEY "foe_pos"
 #define SWOOP_COOLDOWN_KEY "swoop_cooldown"
 #define OUTWARDS_KEY "outwards"
 #define INWARDS_KEY "inwards"

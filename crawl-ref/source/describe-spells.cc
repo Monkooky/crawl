@@ -370,8 +370,8 @@ static string _range_string(const spell_type &spell, const monster_info *mon_own
         return "";
 
     int minrange = 0;
-    if (spell == SPELL_CALL_DOWN_LIGHTNING || spell == SPELL_FLASHING_BALESTRA)
-        minrange = 2;
+    if (spell == SPELL_CALL_DOWN_LIGHTNING || spell == SPELL_FLASHING_BALESTRA || spell == SPELL_BECKONING_GALE)
+        minrange = 3;
 
     const bool in_range = has_range
                     && crawl_state.need_save
@@ -771,7 +771,7 @@ static void _write_book(const spellbook_contents &book,
         tiles.json_write_string("title", dith_marker + spell_title(spell));
         tiles.json_write_int("colour", _spell_colour(spell, source_item));
         tiles.json_write_name("tile");
-        tiles.write_tileidx(tileidx_spell(spell));
+        tiles.json_write_int(tileidx_spell(spell));
 
         // don't crash if we have more spells than letters.
         auto entry = find_if(spell_map.begin(), spell_map.end(),

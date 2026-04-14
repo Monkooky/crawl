@@ -81,17 +81,25 @@ int actor::dragon_level() const {
     return min(get_experience_level(), 18);
 }
 
-bool actor::handle_trap()
-{
-    trap_def* trap = trap_at(pos());
-    if (trap)
-        trap->trigger(*this);
-    return trap != nullptr;
-}
-
 int actor::skill_rdiv(skill_type sk, int mult, int div) const
 {
     return div_rand_round(skill(sk, mult * 256), div * 256);
+}
+
+bool actor::friendly() const
+{
+    return temp_attitude() == ATT_FRIENDLY;
+}
+
+bool actor::neutral() const
+{
+    const mon_attitude_type att = temp_attitude();
+    return att == ATT_NEUTRAL || att == ATT_GOOD_NEUTRAL;
+}
+
+bool actor::good_neutral() const
+{
+    return temp_attitude() == ATT_GOOD_NEUTRAL;
 }
 
 int actor::wearing_jewellery(int sub_type) const
