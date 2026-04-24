@@ -30,6 +30,7 @@
 #include "state.h"
 #include "stringutil.h"
 #include "terrain.h"
+#include "tile-env.h"
 #include "tileview.h"
 #include "tiles-build-specific.h"
 #include "travel.h"
@@ -501,16 +502,22 @@ static void _unforget_map()
     MapKnowledge &old(*env.map_forgotten);
 
     for (rectangle_iterator ri(0); ri; ++ri)
-        if (!env.map_knowledge(*ri).seen() && old(*ri).seen())
-        {
-            // Don't overwrite known squares, nor magic-mapped with
-            // magic-mapped data -- what was forgotten is less up to date.
+    {
+        // Don't overwrite known squares, nor magic-mapped with
+        // magic-mapped data -- what was forgotten is less up to date.
+        if (env.map_knowledge(*ri).seen() || !old(*ri).seen())
+            continue;
+
+        if (!env.map_knowledge(*ri).mapped())
             env.map_knowledge(*ri) = old(*ri);
-            env.map_seen.set(*ri);
-#ifdef USE_TILE
-            tiles.update_minimap(*ri);
-#endif
+        else
+        {
+            // Don't use set_terrain_seen as that clears the
+            // MAP_CHANGED_FLAG flag
+            env.map_knowledge(*ri).flags |= MAP_SEEN_FLAG;
         }
+        redraw_view_at(*ri);
+    }
 }
 
 static void _forget_map(bool wizard_forget = false)
