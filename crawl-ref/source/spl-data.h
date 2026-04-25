@@ -4574,7 +4574,7 @@ static const struct spell_desc spelldata[] =
 {
     SPELL_GASTRONOMIC_EXPANSE, "Gastronomic Expanse",
     spschool::alchemy | spschool::translocation,
-    spflag::area | spflag::unclean | spflag::destructive,
+    spflag::unclean | spflag::destructive,
     7,
     200,
     1, 1,
