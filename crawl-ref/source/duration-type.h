@@ -311,6 +311,8 @@ enum duration_type
     DUR_INDOMITABLE,
     DUR_SALVO,
     DUR_TAILWIND,
+    DUR_EXEGESIS,
+    DUR_ANTISWIFT,
     DUR_GASTRONOMIC,
     NUM_DURATIONS
 };

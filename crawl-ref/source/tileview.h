@@ -16,7 +16,7 @@ class monster;
 struct tile_flavour;
 struct packed_cell;
 
-tileidx_t pick_dngn_tile(tileidx_t idx, int value, int variant = 0);
+tileidx_t pick_dngn_tile(tileidx_t idx, int value);
 
 // Initialize the flavour and the tile env when changing or creating levels.
 void tile_new_level(bool first_time, bool init_unseen);
@@ -54,3 +54,5 @@ void tile_apply_animations(tileidx_t bg, tile_flavour *flv);
 void tile_apply_properties(const coord_def &gc, packed_cell &cell);
 
 void tile_forget_map(const coord_def &gc);
+
+unsigned short tile_door_connect(coord_def gc);

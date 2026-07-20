@@ -288,7 +288,7 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_ZOMBIE_OCTOPODE:
     case TILEP_MONS_ANCESTOR:
     case TILEP_MONS_ANCESTOR_KNIGHT:
-    case TILEP_MONS_ANCESTOR_BATTLEMAGE:
+    case TILEP_MONS_ANCESTOR_ELEMENTALIST:
     case TILEP_MONS_RAGGED_HIEROPHANT:
     case TILEP_MONS_VAMPIRE_MAGE:
     case TILEP_MONS_NORRIS:
@@ -472,6 +472,7 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_ARCANIST:
     case TILEP_MONS_OCCULTIST:
     case TILEP_MONS_DRAUGR_MEDIUM:
+    case TILEP_MONS_HERALD_OF_THE_ABYSS:
         *ofs_x = -2;
         *ofs_y = -2;
         break;
@@ -566,6 +567,7 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_DEEP_ELF_DEATH_MAGE:
     case TILEP_MONS_DEEP_ELF_HIGH_PRIEST:
     case TILEP_MONS_DEEP_ELF_KNIGHT:
+    case TILEP_MONS_DEEP_ELF_KNIGHT_PHASED:
     case TILEP_MONS_DEEP_ELF_DEMONOLOGIST:
     case TILEP_MONS_DEEP_ELF_ANNIHILATOR:
     case TILEP_MONS_PLAYER_SHADOW_ELF:
@@ -598,8 +600,8 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
         *ofs_x = -1;
         *ofs_y = -1;
         break;
-    case TILEP_MONS_DEEP_ELF_AIR_MAGE:
-    case TILEP_MONS_DEEP_ELF_FIRE_MAGE:
+    case TILEP_MONS_DEEP_ELF_ZEPHYRMANCER:
+    case TILEP_MONS_DEEP_ELF_PYROMANCER:
         *ofs_x = -1;
         *ofs_y = -4;
         break;
@@ -639,10 +641,6 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_SATYR:
         *ofs_x = 1;
         *ofs_y = -4;
-        break;
-    case TILEP_MONS_MAD_ACOLYTE_OF_LUGONU:
-        *ofs_x = -3;
-        *ofs_y = -2;
         break;
     case TILEP_MONS_HUMAN:
     case TILEP_MONS_HUMAN_1:
@@ -720,8 +718,15 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_SAINT_ROKA:
     case TILEP_MONS_DRAUGR_QUADRUPED_SMALL:
     case TILEP_MONS_DRAUGR_DRACONIAN:
+    case TILEP_MONS_KOBOLD_GEOMANCER:
+    case TILEP_MONS_KOBOLD_GEOMANCER_1:
+    case TILEP_MONS_KOBOLD_GEOMANCER_2:
         *ofs_x = -3;
         *ofs_y = 1;
+        break;
+    case TILEP_MONS_FUNGAL_SHAMBLER:
+        *ofs_x = -3;
+        *ofs_y = 2;
         break;
     case TILEP_MONS_SERAPH_SWORDLESS:
         *ofs_x = -1;
@@ -729,12 +734,6 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
         break;
     case TILEP_MONS_DRAUGR_BIRD:
         *ofs_x = -4;
-        *ofs_y = 1;
-        break;
-    case TILEP_MONS_KOBOLD_GEOMANCER:
-    case TILEP_MONS_KOBOLD_GEOMANCER_1:
-    case TILEP_MONS_KOBOLD_GEOMANCER_2:
-        *ofs_x = -3;
         *ofs_y = 1;
         break;
     case TILEP_MONS_KOBOLD_DEMONOLOGIST:
@@ -749,6 +748,11 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
         *ofs_x = -5;
         *ofs_y = 1;
         break;
+    case TILEP_MONS_ABYSSAL_ACOLYTE:
+    case TILEP_MONS_ABYSSAL_ACOLYTE_PHASED:
+        *ofs_x = -5;
+        *ofs_y = 2;
+        break;
     case TILEP_TRAN_FORTRESS_CRAB:
     case TILEP_TRAN_FORTRESS_CRAB_GARGOYLE:
         *ofs_x = -1;
@@ -758,6 +762,7 @@ bool mcache_monster::get_weapon_offset(tileidx_t mon_tile,
     case TILEP_MONS_OGRE:
     case TILEP_MONS_SWAMP_OGRE:
     case TILEP_MONS_OGRE_MAGE:
+    case TILEP_MONS_OGRE_MAGE_PHASED:
     case TILEP_MONS_IRONBOUND_THUNDERHULK:
     case TILEP_MONS_LODUL:
         *ofs_x = 1;
@@ -980,6 +985,7 @@ bool mcache_monster::get_shield_offset(tileidx_t mon_tile,
     case TILEP_MONS_ORC_WARLORD:
     case TILEP_MONS_ZOMBIE_ORC:
     case TILEP_MONS_DEEP_ELF_KNIGHT:
+    case TILEP_MONS_DEEP_ELF_KNIGHT_PHASED:
     case TILEP_MONS_KIRKE:
     case TILEP_MONS_DIMME:
     case TILEP_MONS_ORC_APOSTLE_2:
@@ -1214,8 +1220,8 @@ bool mcache_monster::get_shield_offset(tileidx_t mon_tile,
         break;
 
     case TILEP_MONS_DEEP_ELF_DEMONOLOGIST:
-    case TILEP_MONS_DEEP_ELF_AIR_MAGE:
-    case TILEP_MONS_DEEP_ELF_FIRE_MAGE:
+    case TILEP_MONS_DEEP_ELF_ZEPHYRMANCER:
+    case TILEP_MONS_DEEP_ELF_PYROMANCER:
         *ofs_x = 2;
         *ofs_y = 0;
         break;
@@ -1523,9 +1529,20 @@ mcache_ghost::mcache_ghost(const monster_info& mon)
 {
     ASSERT(mcache_ghost::valid(mon));
 
+    uint32_t data[] =
+    {
+        (uint32_t)mon.i_ghost.species,
+        (uint32_t)mon.i_ghost.job,
+        (uint32_t)mon.i_ghost.religion,
+        (uint32_t)mon.i_ghost.best_skill,
+        (uint32_t)mon.i_ghost.best_skill_rank,
+        (uint32_t)mon.i_ghost.xl_rank,
+        (uint32_t)mon.i_ghost.damage,
+        (uint32_t)mon.i_ghost.ac,
+    };
+
     const uint32_t seed = hash32(&mon.mname[0], mon.mname.size())
-                        ^ hash32(&mon.i_ghost, sizeof(mon.i_ghost)
-                                             - sizeof(mon.i_ghost.title));
+                          ^ hash_uint32(data);
 
     m_doll.parts[TILEP_PART_BASE] = TILEP_SHOW_EQUIP;
     tilep_race_default(mon.i_ghost.species, 0, &m_doll);
@@ -1571,11 +1588,11 @@ mcache_ghost::mcache_ghost(const monster_info& mon)
     {
     case SK_MACES_FLAILS:
         if (dam > 30)
-            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_GREAT_FLAIL;
-        else if (dam > 25)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_GREAT_MACE;
-        else if (dam > 20)
+        else if (dam > 25)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_EVENINGSTAR;
+        else if (dam > 20)
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_DIRE_FLAIL;
         else if (dam > 15)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_MORNINGSTAR;
         else if (dam > 10)
@@ -1587,17 +1604,21 @@ mcache_ghost::mcache_ghost(const monster_info& mon)
         break;
 
     case SK_SHORT_BLADES:
-        if (dam > 20)
+        if (dam > 25)
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_QUICK_BLADE;
+        else if (dam > 20)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_RAPIER;
         else if (dam > 10)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_SHORT_SWORD_SLANT;
         else
-            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_DAGGER_SLANT;
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_DAGGER;
         break;
 
     case SK_LONG_BLADES:
-        if (dam > 25)
-            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_GREAT_SWORD_SLANT;
+        if (dam > 35)
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_TRIPLE_SWORD;
+        else if (dam > 25)
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_GREAT_SWORD;
         else if (dam > 20)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_KATANA_SLANT;
         else if (dam > 15)
@@ -1622,6 +1643,8 @@ mcache_ghost::mcache_ghost(const monster_info& mon)
         break;
 
     case SK_POLEARMS:
+        if (dam > 40)
+            m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_BARDICHE;
         if (dam > 30)
             m_doll.parts[TILEP_PART_HAND1] = TILEP_HAND1_GLAIVE;
         else if (dam > 20)

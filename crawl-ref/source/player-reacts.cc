@@ -68,6 +68,7 @@
 #include "mutation.h"
 #include "nearby-danger.h"
 #include "ouch.h"
+#include "output.h"
 #include "player.h"
 #include "player-stats.h"
 #include "random.h"
@@ -302,7 +303,7 @@ int current_horror_level()
 {
     int horror_level = 0;
 
-    for (monster_near_iterator mi(&you, LOS_NO_TRANS); mi; ++mi)
+    for (monster_near_iterator mi(&you, LOS_NO_TRANS, true); mi; ++mi)
     {
         if (mons_aligned(*mi, &you)
             || !mons_is_threatening(**mi)
@@ -499,10 +500,6 @@ static void _handle_hoarding()
  */
 void player_reacts_to_monsters()
 {
-    // In case Maurice managed to steal a needed item for example.
-    if (!you_are_delayed())
-        update_can_currently_train();
-
     check_monster_detect();
 
     if (have_passive(passive_t::detect_items) || you.has_mutation(MUT_JELLY_GROWTH)
@@ -523,7 +520,7 @@ void player_reacts_to_monsters()
         if (you.constricted_type == CONSTRICT_ROOTS)
             mprf("The roots around you sink back into the ground.");
         else if (you.constricted_type == CONSTRICT_BVC)
-            mprf("The zombie hands holding you return to the earth.");
+            mprf("The zombie hands constricting you return to the earth.");
 
         you.stop_being_constricted(true);
     }
@@ -599,6 +596,36 @@ void player_reacts_to_monsters()
     // so check these again now.
     you.update_beholders();
     you.update_fearmongers();
+}
+
+void check_trapped()
+{
+    if (you.trapped)
+    {
+        do_trap_effects();
+        you.trapped = false;
+    }
+}
+
+// Register taking an action which takes no time.
+void player_takes_instant_action()
+{
+    you.turn_is_over = false;
+    you.elapsed_time_at_last_input = you.elapsed_time;
+    update_turn_count();
+    you.took_instant_action = true;
+}
+
+// Those reactions which should happen even when no time has passed, as long
+// as the player has done something.
+void player_reacts_to_instant_action()
+{
+    you.took_instant_action = false;
+    mons_reset_just_seen();
+    you.update_beholders();
+    you.update_fearmongers();
+    check_trapped();
+    trigger_exploration_conducts();
 }
 
 static bool _check_recite()
@@ -778,25 +805,24 @@ static void _decrement_durations()
 
     _decrement_transform_duration(delay);
 
-    if (you.attribute[ATTR_SWIFTNESS] >= 0)
+    if (you.duration[DUR_SWIFTNESS])
     {
         if (_decrement_a_duration(DUR_SWIFTNESS, delay,
                                   "You feel sluggish.", coinflip(),
                                   "You start to feel a little slower."))
         {
             // Start anti-swiftness.
-            you.duration[DUR_SWIFTNESS] = you.attribute[ATTR_SWIFTNESS];
-            you.attribute[ATTR_SWIFTNESS] = -1;
-        }
-    }
-    else
-    {
-        if (_decrement_a_duration(DUR_SWIFTNESS, delay,
-                                  "You no longer feel sluggish.", coinflip(),
-                                  "You start to feel a little faster."))
-        {
+            you.duration[DUR_ANTISWIFT] = you.attribute[ATTR_SWIFTNESS];
             you.attribute[ATTR_SWIFTNESS] = 0;
         }
+    }
+    else if (you.duration[DUR_ANTISWIFT])
+    {
+        // We don't make this a normal duration so that it doesn't decrement
+        // later in this function on the turn where swiftness wears off.
+        _decrement_a_duration(DUR_ANTISWIFT, delay,
+                              "You no longer feel sluggish.", coinflip(),
+                              "You start to feel a little faster.");
     }
 
     // Decrement Powered By Death strength
@@ -1000,12 +1026,6 @@ static void _decrement_durations()
             make_stringf("You %s the barbed spikes from your body.",
                 you.berserk() ? "rip and tear" : "carefully extract").c_str());
     }
-
-    if (you.wearing_jewellery(AMU_WILDSHAPE))
-        did_god_conduct(DID_CHAOS, 1);
-
-    if (you.wearing_ego(OBJ_ARMOUR, SPARM_DEATH))
-        did_god_conduct(DID_EVIL, 1);
 
     if (!you.duration[DUR_ANCESTOR_DELAY]
         && have_passive(passive_t::frail)

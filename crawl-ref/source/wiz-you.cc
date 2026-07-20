@@ -12,7 +12,9 @@
 
 #include "abyss.h"
 #include "acquire.h"
+#include "act-iter.h"
 #include "dbg-util.h"
+#include "env.h"
 #include "god-abil.h"
 #include "god-wrath.h"
 #include "item-use.h"
@@ -132,6 +134,15 @@ void wizard_change_species()
     }
 
     change_species_to(sp);
+
+    if (you.can_see_invisible())
+        env.invis_knowledge.clear();
+    else
+    {
+        for (monster_iterator mi; mi; ++mi)
+            if (testbits((*mi)->flags, MF_WAS_IN_VIEW) && !you.can_see(**mi))
+                mi->sense_if_invisible();
+    }
 }
 
 // Casts a specific spell by number or name.
@@ -254,7 +265,9 @@ void wizard_heal(bool super_heal)
         you.duration[DUR_FIRE_VULN] = 0;
         you.duration[DUR_POISON_VULN] = 0;
         you.duration[DUR_SLIMIFYING] = 0;
+        you.duration[DUR_ANTISWIFT] = 0;
         you.attribute[ATTR_DOOM] = 0;
+        you.attribute[ATTR_OSTRACISM] = 0;
         delete_all_temp_mutations("Super heal");
         decr_zot_clock();
         you.redraw_stats = true;
@@ -368,6 +381,29 @@ void wizard_set_gold()
         you.set_gold(max(atoi(buf), 0));
 
     mprf("You now have %d gold piece%s.", you.gold, you.gold != 1 ? "s" : "");
+}
+
+void wizard_set_gift_timeout()
+{
+    mprf(MSGCH_PROMPT, "Enter new gift timeout (current = %d, Enter for 0): ",
+         you.gift_timeout);
+
+    char buf[30];
+    if (cancellable_get_line_autohist(buf, sizeof buf))
+    {
+        canned_msg(MSG_OK);
+        return;
+    }
+
+    const int newtimeout = atoi(buf);
+    if (newtimeout < 0 || newtimeout > 255)
+    {
+        mpr("Gift timeout must be between 0 and 255.");
+        return;
+    }
+
+    you.gift_timeout = newtimeout;
+    mprf("Set gift timeout to %d.", you.gift_timeout);
 }
 
 void wizard_set_piety()
@@ -1002,13 +1038,13 @@ void wizard_transform()
 
     vector<WizardEntry> choices;
     choices.emplace_back(WizardEntry(0, "None", 0));
-    for (size_t i = 0; i < form_names.size(); ++i)
-        choices.emplace_back(WizardEntry(0, form_names[i].second, i));
+    for (const auto &form_name : form_names)
+        choices.emplace_back(WizardEntry(0, form_name.second, form_name.first));
 
     auto menu = WizardMenu("Which form (ESC to exit)?", choices);
     if (!menu.run(true))
         return;
-    auto form = static_cast<transformation>(form_names[menu.result()].first);
+    auto form = static_cast<transformation>(menu.result());
 
     you.transform_uncancellable = false;
     if (you.default_form == you.form && you.form != transformation::none)
@@ -1104,5 +1140,31 @@ void wizard_set_zot_clock()
         mprf("Zot clock should be between 0 and %d", max_zot_clock);
     else
         set_turns_until_zot(turns_left);
+}
+
+void wizard_reset_god_capstones()
+{
+    // generic
+    you.one_time_ability_used.reset();
+
+    // Makhleb
+    for (int i = 0; i < NUM_MUTATIONS; i++)
+    {
+        if (you.innate_mutation[i] && is_makhleb_mark((mutation_type)i))
+        {
+            you.innate_mutation[i]--;
+            delete_mutation((mutation_type)i,"wizard power", false, true, false);
+        }
+    }
+    you.props.erase(MAKHLEB_OFFERED_MARKS_KEY);
+    makhleb_initialize_marks();
+
+    // Okawaru
+    you.props.erase(OKAWARU_WEAPON_GIFTED_KEY);
+    you.props.erase(OKAWARU_ARMOUR_GIFTED_KEY);
+    you.props.erase(OKAWARU_WEAPONS_KEY);
+    you.props.erase(OKAWARU_ARMOUR_KEY);
+
+    mpr("Reset capstone god abilities.");
 }
 #endif

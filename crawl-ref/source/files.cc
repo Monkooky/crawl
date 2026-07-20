@@ -1623,6 +1623,7 @@ static const vector<branch_type> portal_generation_order =
 #endif
     // do not pregenerate bazaar (TODO: this is non-ideal)
     // do not pregenerate trove
+    BRANCH_GULCH,
     BRANCH_WIZLAB,
     BRANCH_DESOLATION,
 };
@@ -2154,6 +2155,9 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
         update_companions();
     }
 
+    // At this point there should be no monsters in the reset queue.
+    ASSERT(!any_pending_monster_reset());
+
 #ifdef USE_TILE
     if (load_mode != LOAD_VISITOR)
     {
@@ -2228,7 +2232,6 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
     // Shouldn't happen, but this is too unimportant to assert.
     clear_final_effects();
-    env.final_effect_monster_cache.clear();
 
     los_changed();
 
@@ -2328,6 +2331,8 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
 
         // no cross-level pursuits
         crawl_state.potential_pursuers.clear();
+
+        ash_detect_portals(is_map_persistent());
     }
 
     // Save the created/updated level out to disk:
@@ -2478,8 +2483,6 @@ bool load_level(dungeon_feature_type stair_taken, load_mode_type load_mode,
             }
         }
 
-        ash_detect_portals(is_map_persistent());
-
         if (just_created_level)
             xom_new_level_noise_or_stealth();
     }
@@ -2539,6 +2542,9 @@ void save_level(const level_id& lid)
 {
     if (you.level_visited(lid))
         travel_cache.get_level_info(lid).update();
+
+    // Reset any monsters that died/left this action.
+    flush_monster_reset();
 
     // Nail all items to the ground.
     fix_item_coordinates();
@@ -3389,6 +3395,9 @@ bool is_existing_level(const level_id &level)
 
 void delete_level(const level_id &level)
 {
+    // This level's env.mons is being discarded, so clear any pending resets.
+    drop_pending_monster_resets();
+
     travel_cache.erase_level_info(level);
     StashTrack.remove_level(level);
     shopping_list.del_things_from(level);

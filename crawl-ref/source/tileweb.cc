@@ -39,8 +39,10 @@
 #include "outer-menu.h"
 #include "message.h"
 #include "mon-util.h"
+#include "mon-info-flag-name.h"
 #include "notes.h"
 #include "options.h"
+#include "output.h"
 #include "player.h"
 #include "player-equip.h"
 #include "religion.h"
@@ -1107,6 +1109,14 @@ player_info::player_info()
     position = coord_def(-1, -1);
 }
 
+// The colour for the stats-panel weapon slot.
+static uint8_t _stats_weapon_colour(const item_def* weapon)
+{
+    if (!weapon)
+        return (uint8_t) get_form()->uc_colour;
+    return (uint8_t) wielded_weapon_colour(*weapon);
+}
+
 /**
  * Send the player properties to the webserver. Any player properties that
  * must be available to the WebTiles client must be sent here through an
@@ -1297,13 +1307,7 @@ void TilesFramework::_send_player(bool force_full)
     for (unsigned int i = 0; i < ENDOFPACK; ++i)
     {
         json_open_object(to_string(i));
-        item_def item = you.inv[i];
-        if (you.corrosion_amount() && is_weapon(item)
-            && you.equipment.find_equipped_slot(item) != SLOT_UNUSED)
-        {
-            item.plus -= 1 * you.corrosion_amount();
-        }
-        _send_item(c.inv[i], item, c.inv_uselessness[i], force_full);
+        _send_item(c.inv[i], you.inv[i], c.inv_uselessness[i], force_full);
         json_close_object(true);
     }
     json_close_object(true);
@@ -1323,8 +1327,10 @@ void TilesFramework::_send_player(bool force_full)
 
     _update_string(force_full, c.unarmed_attack,
                    you.unarmed_attack_name(), "unarmed_attack");
-    _update_int(force_full, c.unarmed_attack_colour,
-                (uint8_t) get_form()->uc_colour, "unarmed_attack_colour");
+    _update_int(force_full, c.weapon_colour, _stats_weapon_colour(weapon),
+                "weapon_colour");
+    _update_int(force_full, c.offhand_weapon_colour,
+                _stats_weapon_colour(offhand), "offhand_weapon_colour");
     _update_int(force_full, c.quiver_available,
                     you.quiver_action.get()->is_valid()
                                 && you.quiver_action.get()->is_enabled(),
@@ -1529,9 +1535,9 @@ void TilesFramework::send_doll(const dolls_data &doll, bool submerged, bool ghos
     tiles.json_close_array();
 }
 
-void TilesFramework::send_mcache(mcache_entry *entry, bool submerged, bool send)
+void TilesFramework::send_mcache(mcache_entry *entry, bool submerged, bool invis, bool send)
 {
-    bool trans = entry->transparent();
+    bool trans = entry->transparent() || invis;
     if (trans && send)
         tiles.json_write_int("trans", 1);
 
@@ -1646,6 +1652,8 @@ void TilesFramework::_send_cell(const coord_def &gc,
         const tileidx_t fg_idx = next_pc.fg.tile();
 
         const bool in_water = is_in_water(next_pc);
+        const bool invis = (next_pc.fg.flags() & TILE_FLAG_INVIS)
+                            || (next_pc.bg.flags() & TILE_FLAG_REMEMBERED_INVIS);
         bool fg_changed = false;
 
         if (next_pc.fg != current_pc.fg)
@@ -1764,7 +1772,7 @@ void TilesFramework::_send_cell(const coord_def &gc,
             {
                 mcache_entry *entry = mcache.get(fg_idx);
                 if (entry)
-                    send_mcache(entry, in_water);
+                    send_mcache(entry, in_water, invis);
                 else
                 {
                     json_write_comma();
@@ -1805,7 +1813,7 @@ void TilesFramework::_send_cell(const coord_def &gc,
                     tileidx_t mcache_idx = mcache.register_monster(minfo);
                     mcache_entry *entry = mcache.get(mcache_idx);
                     if (entry)
-                        send_mcache(entry, in_water, false);
+                        send_mcache(entry, in_water, invis, false);
                     else
                         json_write_null("mcache");
                 }
@@ -1817,6 +1825,9 @@ void TilesFramework::_send_cell(const coord_def &gc,
         {
             if (fg_changed)
             {
+                if (invis)
+                    tiles.json_write_int("trans", 1);
+
                 json_write_comma();
                 write_message("\"doll\":[[%u,%d]]", (unsigned int) fg_idx, TILE_Y);
                 json_write_null("mcache");
@@ -1927,6 +1938,9 @@ void TilesFramework::_send_map(bool spectator_only)
         m_player_on_level = you.on_current_level;
     }
 
+    _update_string(force_full, invis_mon_desc,
+                   env.invis_knowledge.get_unknown_monster_description(), "invis_mon_desc");
+
     if (force_full || m_current_gc != m_next_gc)
     {
         if (m_origin.equals(-1, -1))
@@ -1965,9 +1979,9 @@ void TilesFramework::_send_map(bool spectator_only)
                 screen_cell_t *cell = &m_next_view(gc);
 
                 if (you.flash_where && you.flash_where->is_affected(gc) <= 0)
-                    draw_cell(cell, gc, false, 0);
+                    draw_cell(cell, gc, false, 0, 0);
                 else
-                    draw_cell(cell, gc, false, flash_colour);
+                    draw_cell(cell, gc, false, flash_colour, you.flash_alpha);
 
                 pack_cell_overlays(gc, m_next_view);
             }

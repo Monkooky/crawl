@@ -40,8 +40,8 @@
 #include "mon-death.h"
 #include "mon-place.h"
 #include "mon-util.h"
-#include "output.h"
 #include "player.h"
+#include "player-reacts.h"
 #include "religion.h"
 #include "shout.h"
 #include "skills.h"
@@ -211,7 +211,7 @@ static const vector<god_passive> god_passives[] =
         {  0, passive_t::detect_items },
         {  0, passive_t::bondage_skill_boost },
         {  1, passive_t::identify_items },
-        {  2, passive_t::sinv},
+        {  2, passive_t::see_unseen},
         {  3, passive_t::clarity },
         {  4, passive_t::avoid_traps },
         {  4, passive_t::scrying },
@@ -1006,7 +1006,7 @@ monster* create_player_shadow(coord_def pos, bool friendly, spell_type spell_kno
         && is_weapon(*you.offhand_weapon()))
     {
         wpn2_index = _clone_player_weapon(you.offhand_weapon());
-        if (wpn_index == NON_ITEM)
+        if (wpn2_index == NON_ITEM)
             return nullptr;
     }
 
@@ -1498,12 +1498,12 @@ void dithmenos_shadow_shoot(const coord_def& targ, missile_type thrown_projectil
     mons_throw(mon, atk);
 
     // Give Coglins a shot with their other weapon, if they have one
+    item_def *secondary = mon->mslot_item(MSLOT_ALT_WEAPON);
     if (you.has_mutation(MUT_WIELD_OFFHAND)
-        && mon->mslot_item(MSLOT_ALT_WEAPON)
-        && is_range_weapon(*mon->mslot_item(MSLOT_ALT_WEAPON)))
+        && secondary && secondary != launcher
+        && is_range_weapon(*secondary))
     {
-        mon->swap_weapons(false);
-        ranged_attack_beam atk2(*mon, *launcher, atk.beam);
+        ranged_attack_beam atk2(*mon, *secondary, atk.beam);
         mons_throw(mon, atk2);
     }
 
@@ -1853,13 +1853,10 @@ void wu_jian_trigger_serpents_lash(bool wall_jump)
     }
     else
     {
-        you.turn_is_over = false;
-        you.elapsed_time_at_last_input = you.elapsed_time;
         you.attribute[ATTR_SERPENTS_LASH] -= wall_jump ? 2 : 1;
         you.redraw_status_lights = true;
-        update_turn_count();
+        player_takes_instant_action();
         fire_final_effects();
-        mons_reset_just_seen();
     }
 
     if (you.attribute[ATTR_SERPENTS_LASH] == 0)
@@ -1935,7 +1932,7 @@ static int _wu_jian_number_of_attacks(int& dmg_penalty, bool wall_jump)
     // 10 aut for every character, to avoid punishing fast races.
     const int move_delay = (you.attribute[ATTR_SERPENTS_LASH]
                             ? 100
-                            : player_movement_speed() * player_speed())
+                            : player_overall_move_delay(BASELINE_DELAY))
                                                         * (wall_jump ? 2 : 1);
 
     int attack_delay = you.attack_delay().roll() * BASELINE_DELAY;

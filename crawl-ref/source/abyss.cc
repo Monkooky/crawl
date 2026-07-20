@@ -172,11 +172,15 @@ static void _write_abyssal_features()
 // Returns the roll to use to check if we want to create an abyssal rune.
 static int _abyssal_rune_roll()
 {
-    if (you.runes[RUNE_ABYSSAL] || you.depth < ABYSSAL_RUNE_MIN_LEVEL)
+    const int chance_mult = have_passive(passive_t::attract_abyssal_rune) ? 2 : 1;
+    if (you.runes[RUNE_ABYSSAL] || you.depth < ABYSSAL_RUNE_MIN_LEVEL
+        || (you.props[ABYSS_AREAS_SEEN_KEY].get_int() * chance_mult < ABYSS_RUNE_AREAS_MIN))
+    {
         return -1;
+    }
 
-    static const int chance[] = {0, 0, 10, 15, 22, 100, 100};
-    return chance[you.depth] * (have_passive(passive_t::attract_abyssal_rune) ? 2 : 1);
+    static const int chance[] = {0, 0, 15, 25, 40, 100, 100};
+    return chance[you.depth - 1] * chance_mult;
 }
 
 static void _abyss_fixup_vault(const vault_placement *vp)
@@ -1024,6 +1028,7 @@ static void _abyss_generate_monsters(int nmonsters)
 
     mgen_data mg;
     mg.proximity = PROX_ANYWHERE;
+    mg.flags |= MG_AUTOLURK;
 
     for (int mcount = 0; mcount < nmonsters; mcount++)
     {
@@ -1453,6 +1458,8 @@ static void _generate_area(const map_bitmask &abyss_genlevel_mask, coord_def map
 {
     // Any rune on the floor prevents the abyssal rune from being generated.
     const bool placed_abyssal_rune = find_floor_item(OBJ_RUNES);
+
+    you.props[ABYSS_AREAS_SEEN_KEY].get_int()++;
 
     dprf(DIAG_ABYSS, "_generate_area(). turns_on_level: %d, rune_on_floor: %s",
          env.turns_on_level, placed_abyssal_rune? "yes" : "no");
@@ -2183,6 +2190,10 @@ static void _corrupt_level_features(const corrupt_env &cenv)
 
         const int roll = random2(1000);
 
+        // TODO: It'd be nice to use the same BOLT_CORRUPTION effects as the
+        // monster one does, but this would need lots of rearrangements- both to
+        // animate outwards instead of topdown, and to pick spaces to flash
+        // before they're actually changed so they're not darkened by new walls.
         if (roll < corrupt_perc_chance && _is_grid_corruptible(*ri))
             _corrupt_square(cenv, *ri);
         else if (roll < corrupt_flavor_chance && _is_grid_corruptible(*ri))
@@ -2229,7 +2240,7 @@ static void _corrupt_level_features_monster(const corrupt_env &cenv, monster mon
                 if (shimmer)
                 {
                     flash_tile(*ri, random_choose(RED, BLUE, YELLOW,
-                                MAGENTA), 8, TILE_BOLT_CORRUPTION);
+                                MAGENTA), 4, TILE_BOLT_CORRUPTION);
                 }
                 _corrupt_square_flavor(cenv, *ri);
             }
@@ -2239,7 +2250,7 @@ static void _corrupt_level_features_monster(const corrupt_env &cenv, monster mon
             if (shimmer )
             {
                 flash_tile(*ri, random_choose(RED, BLUE, YELLOW,
-                            MAGENTA), 8, TILE_BOLT_CORRUPTION);
+                            MAGENTA), 4, TILE_BOLT_CORRUPTION);
             }
             // chance to change the colour of any grid
             if (roll < corrupt_flavor_chance && _is_grid_corruptible(*ri))
@@ -2326,6 +2337,7 @@ void lugonu_corrupt_level_monster(const monster &who)
     corrupt_env cenv;
     _corrupt_choose_colours(&cenv);
     _corrupt_level_features_monster(cenv, who);
+    animation_delay(50, true);
 
     // Monster version does not use a timed effect to handle monster summons.
     // This simplifies the effect and allows for the summons to be abjured once
